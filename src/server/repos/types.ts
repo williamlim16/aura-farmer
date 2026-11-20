@@ -4,6 +4,7 @@
  * (null / not_found), so ids cannot be probed across users.
  */
 import type { ApplicationStatus } from "~/lib/applications/status";
+import type { PostingDraft, PostingRequirements, PostingSource } from "~/lib/postings/types";
 import type { CandidateProfile } from "~/lib/profile/schema";
 import type { ResumeKind } from "~/lib/resume/validate";
 import type { AutofillReport } from "~/server/apply/run";
@@ -37,6 +38,7 @@ export interface ApplicationRecord {
   useLlm: boolean;
   profileSnapshot: CandidateProfile;
   resumeId: string | null;
+  postingId: string | null;
   report: AutofillReport | null;
   error: string | null;
   createdAt: Date;
@@ -78,6 +80,7 @@ export interface NewApplication {
   useLlm: boolean;
   profileSnapshot: CandidateProfile;
   resumeId: string | null;
+  postingId?: string | null;
 }
 
 export interface ApplicationPatch {
@@ -86,6 +89,7 @@ export interface ApplicationPatch {
   error?: string | null;
   profileSnapshot?: CandidateProfile;
   useLlm?: boolean;
+  resumeId?: string | null;
 }
 
 export interface ApplicationRepo {
@@ -96,8 +100,46 @@ export interface ApplicationRepo {
   update(userId: string, id: string, patch: ApplicationPatch): Promise<ApplicationRecord>;
 }
 
+export interface PostingRecord {
+  id: string;
+  userId: string;
+  source: PostingSource;
+  sourceUrl: string | null;
+  externalId: string | null;
+  title: string;
+  company: string;
+  location: string;
+  description: string;
+  requirements: PostingRequirements;
+  retrieval: PostingDraft["retrieval"];
+  match: unknown;
+  tailoring: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PostingPatch {
+  title?: string;
+  company?: string;
+  location?: string;
+  description?: string;
+  requirements?: PostingRequirements;
+  match?: unknown;
+  tailoring?: unknown;
+}
+
+export interface PostingRepo {
+  /** Saves a posting; an already-saved import (same source + external id) is returned instead of duplicated. */
+  create(userId: string, draft: PostingDraft): Promise<{ record: PostingRecord; existed: boolean }>;
+  get(userId: string, id: string): Promise<PostingRecord | null>;
+  list(userId: string, opts?: { limit?: number }): Promise<PostingRecord[]>;
+  update(userId: string, id: string, patch: PostingPatch): Promise<PostingRecord>;
+  delete(userId: string, id: string): Promise<boolean>;
+}
+
 export interface Repos {
   readonly driver: "memory" | "postgres";
+  postings: PostingRepo;
   resumes: ResumeRepo;
   profiles: ProfileRepo;
   applications: ApplicationRepo;

@@ -11,6 +11,7 @@ import { sql } from "drizzle-orm";
 import { index, pgTableCreator, uniqueIndex } from "drizzle-orm/pg-core";
 
 import type { AutofillReport } from "~/server/apply/run";
+import type { PostingRequirements } from "~/lib/postings/types";
 import type { CandidateProfile } from "~/lib/profile/schema";
 
 // Same table prefix as schema.ts (drizzle.config tablesFilter: "aura-farmer_*").
@@ -40,6 +41,34 @@ export const candidateProfiles = createTable("candidate_profile", (d) => ({
   updatedAt: d.timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }));
 
+export const jobPostings = createTable(
+  "job_posting",
+  (d) => ({
+    id: d.uuid().primaryKey().defaultRandom(),
+    userId: d.uuid("user_id").notNull(),
+    source: d.varchar({ length: 16 }).notNull(), // greenhouse | lever | ashby | manual
+    sourceUrl: d.text("source_url"),
+    externalId: d.varchar("external_id", { length: 200 }),
+    title: d.varchar({ length: 300 }).notNull(),
+    company: d.varchar({ length: 200 }).notNull(),
+    location: d.varchar({ length: 200 }).notNull().default(""),
+    description: d.text().notNull(),
+    requirements: d.jsonb().$type<PostingRequirements>().notNull(),
+    retrieval: d.varchar({ length: 16 }).notNull(), // live_api | manual
+    /** Latest job-to-profile match (explainable assessment). */
+    match: d.jsonb().$type<unknown>(),
+    /** Tailoring suggestions, decisions and draft answers. */
+    tailoring: d.jsonb().$type<unknown>(),
+    createdAt: d.timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: d.timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  }),
+  (t) => [
+    index("job_posting_user_idx").on(t.userId, t.createdAt),
+    // The same imported posting is saved once per user.
+    uniqueIndex("job_posting_user_external_idx").on(t.userId, t.source, t.externalId).where(sql`external_id is not null`),
+  ],
+);
+
 export const applications = createTable(
   "application",
   (d) => ({
@@ -55,6 +84,7 @@ export const applications = createTable(
     /** Profile as reviewed when the run was requested, so results are reproducible. */
     profileSnapshot: d.jsonb("profile_snapshot").$type<CandidateProfile>().notNull(),
     resumeId: d.uuid("resume_id").references(() => resumes.id, { onDelete: "set null" }),
+    postingId: d.uuid("posting_id").references(() => jobPostings.id, { onDelete: "set null" }),
     report: d.jsonb().$type<AutofillReport>(),
     error: d.text(),
     createdAt: d.timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

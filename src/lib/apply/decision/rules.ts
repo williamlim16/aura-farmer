@@ -68,6 +68,12 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
   const saved = prefs.savedAnswers?.[normQ(field.label)];
   if (saved && field.label) return fitToField(field, saved, 1);
 
+  // A user-approved draft answer (from application preparation) for motivation questions.
+  const why = prefs.savedAnswers?.["@why_company"];
+  if (why && cls.kind === "essay" && /\b(why|interest|motivat|join|excite)/i.test(field.label)) {
+    return { action: "fill", value: why, tier: "rule", confidence: 1, reviewRequired: true, note: "Your approved draft answer" };
+  }
+
   switch (cls.kind) {
     case "third_party":
       return human("Asks about another person (referrer/reference); not in your profile.");

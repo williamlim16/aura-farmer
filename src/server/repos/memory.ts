@@ -3,6 +3,7 @@
  * long as the process; getRepos() refuses this driver in production.
  */
 import { canTransition, InvalidTransitionError } from "~/lib/applications/status";
+import type { PostingDraft } from "~/lib/postings/types";
 import type { CandidateProfile } from "~/lib/profile/schema";
 import {
   RepoError,
@@ -10,6 +11,9 @@ import {
   type ApplicationRecord,
   type ApplicationRepo,
   type NewApplication,
+  type PostingPatch,
+  type PostingRecord,
+  type PostingRepo,
   type ProfileRecord,
   type ProfileRepo,
   type Repos,
@@ -82,6 +86,7 @@ class MemoryApplicationRepo implements ApplicationRepo {
       useLlm: input.useLlm,
       profileSnapshot: clone(input.profileSnapshot),
       resumeId: input.resumeId,
+      postingId: input.postingId ?? null,
       report: null,
       error: null,
       createdAt: now,
@@ -115,6 +120,7 @@ class MemoryApplicationRepo implements ApplicationRepo {
       ...(patch.error !== undefined ? { error: patch.error } : {}),
       ...(patch.profileSnapshot ? { profileSnapshot: clone(patch.profileSnapshot) } : {}),
       ...(patch.useLlm !== undefined ? { useLlm: patch.useLlm } : {}),
+      ...(patch.resumeId !== undefined ? { resumeId: patch.resumeId } : {}),
       ...(patch.status === "submitted_by_user" ? { submittedAt: new Date() } : {}),
       updatedAt: new Date(),
     };
@@ -123,6 +129,37 @@ class MemoryApplicationRepo implements ApplicationRepo {
   }
 }
 
+class MemoryPostingRepo implements PostingRepo {
+  private rows = new Map<string, PostingRecord>();
+  async create(userId: string, draft: PostingDraft) {
+    const dup = draft.externalId ? [...this.rows.values()].find((r) => r.userId === userId && r.source === draft.source && r.externalId === draft.externalId) : undefined;
+    if (dup) return { record: clone(dup), existed: true };
+    const now = new Date();
+    const row: PostingRecord = { ...clone(draft), id: crypto.randomUUID(), userId, match: null, tailoring: null, createdAt: now, updatedAt: now };
+    this.rows.set(row.id, row);
+    return { record: clone(row), existed: false };
+  }
+  async get(userId: string, id: string) {
+    const r = this.rows.get(id);
+    return r?.userId === userId ? clone(r) : null;
+  }
+  async list(userId: string, opts: { limit?: number } = {}) {
+    return [...this.rows.values()].filter((r) => r.userId === userId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, Math.min(opts.limit ?? 50, 200)).map(clone);
+  }
+  async update(userId: string, id: string, patch: PostingPatch) {
+    const r = this.rows.get(id);
+    if (r?.userId !== userId) throw new RepoError("Job posting not found.", "not_found");
+    const next: PostingRecord = { ...r, ...clone(patch), updatedAt: new Date() };
+    this.rows.set(id, next);
+    return clone(next);
+  }
+  async delete(userId: string, id: string) {
+    const r = this.rows.get(id);
+    if (r?.userId !== userId) return false;
+    return this.rows.delete(id);
+  }
+}
+
 export function createMemoryRepos(): Repos {
-  return { driver: "memory", resumes: new MemoryResumeRepo(), profiles: new MemoryProfileRepo(), applications: new MemoryApplicationRepo() };
+  return { driver: "memory", resumes: new MemoryResumeRepo(), profiles: new MemoryProfileRepo(), applications: new MemoryApplicationRepo(), postings: new MemoryPostingRepo() };
 }

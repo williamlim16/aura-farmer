@@ -9,13 +9,17 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { canTransition, type ApplicationStatus } from "~/lib/applications/status";
 import { candidateProfileSchema, type CandidateProfile } from "~/lib/profile/schema";
 import type { ResumeKind } from "~/lib/resume/validate";
-import { applications, candidateProfiles, resumes } from "~/server/db/apply-schema";
+import type { PostingDraft, PostingSource } from "~/lib/postings/types";
+import { applications, candidateProfiles, jobPostings, resumes } from "~/server/db/apply-schema";
 import {
   RepoError,
   type ApplicationPatch,
   type ApplicationRecord,
   type ApplicationRepo,
   type NewApplication,
+  type PostingPatch,
+  type PostingRecord,
+  type PostingRepo,
   type ProfileRepo,
   type Repos,
   type ResumeRecord,
@@ -121,6 +125,7 @@ class PgApplicationRepo implements ApplicationRepo {
         useLlm: input.useLlm,
         profileSnapshot: parseProfile(input.profileSnapshot),
         resumeId: input.resumeId,
+        postingId: input.postingId ?? null,
         status: "draft",
       })
       .returning();
@@ -153,6 +158,7 @@ class PgApplicationRepo implements ApplicationRepo {
     if (patch.error !== undefined) set.error = patch.error;
     if (patch.profileSnapshot) set.profileSnapshot = parseProfile(patch.profileSnapshot);
     if (patch.useLlm !== undefined) set.useLlm = patch.useLlm;
+    if (patch.resumeId !== undefined) set.resumeId = patch.resumeId;
     if (patch.status === "submitted_by_user") set.submittedAt = new Date();
     // Compare-and-set on the status we validated against, so concurrent updates cannot skip the state machine.
     const [row] = await this.db
@@ -165,6 +171,43 @@ class PgApplicationRepo implements ApplicationRepo {
   }
 }
 
+function toPosting(r: typeof jobPostings.$inferSelect): PostingRecord {
+  return { ...r, source: r.source as PostingSource, retrieval: r.retrieval as PostingDraft["retrieval"], match: r.match ?? null, tailoring: r.tailoring ?? null };
+}
+
+class PgPostingRepo implements PostingRepo {
+  constructor(private db: Db) {}
+  async create(userId: string, draft: PostingDraft) {
+    if (!validId(userId)) throw new RepoError("Invalid user id.", "not_found");
+    const rows = await this.db.insert(jobPostings).values({ ...draft, userId }).onConflictDoNothing().returning();
+    if (rows[0]) return { record: toPosting(rows[0]), existed: false };
+    const [dup] = await this.db.select().from(jobPostings).where(and(eq(jobPostings.userId, userId), eq(jobPostings.source, draft.source), eq(jobPostings.externalId, draft.externalId ?? "")));
+    if (!dup) throw new RepoError("Could not save the posting.", "conflict");
+    return { record: toPosting(dup), existed: true };
+  }
+  async get(userId: string, id: string) {
+    if (!validId(id) || !validId(userId)) return null;
+    const [r] = await this.db.select().from(jobPostings).where(and(eq(jobPostings.id, id), eq(jobPostings.userId, userId)));
+    return r ? toPosting(r) : null;
+  }
+  async list(userId: string, opts: { limit?: number } = {}) {
+    if (!validId(userId)) return [];
+    const rows = await this.db.select().from(jobPostings).where(eq(jobPostings.userId, userId)).orderBy(desc(jobPostings.createdAt)).limit(Math.min(opts.limit ?? 50, 200));
+    return rows.map(toPosting);
+  }
+  async update(userId: string, id: string, patch: PostingPatch) {
+    if (!validId(id) || !validId(userId)) throw new RepoError("Job posting not found.", "not_found");
+    const [r] = await this.db.update(jobPostings).set({ ...patch, updatedAt: new Date() }).where(and(eq(jobPostings.id, id), eq(jobPostings.userId, userId))).returning();
+    if (!r) throw new RepoError("Job posting not found.", "not_found");
+    return toPosting(r);
+  }
+  async delete(userId: string, id: string) {
+    if (!validId(id) || !validId(userId)) return false;
+    const rows = await this.db.delete(jobPostings).where(and(eq(jobPostings.id, id), eq(jobPostings.userId, userId))).returning({ id: jobPostings.id });
+    return rows.length > 0;
+  }
+}
+
 export function createPostgresRepos(db: Db): Repos {
-  return { driver: "postgres", resumes: new PgResumeRepo(db), profiles: new PgProfileRepo(db), applications: new PgApplicationRepo(db) };
+  return { driver: "postgres", resumes: new PgResumeRepo(db), profiles: new PgProfileRepo(db), applications: new PgApplicationRepo(db), postings: new PgPostingRepo(db) };
 }
