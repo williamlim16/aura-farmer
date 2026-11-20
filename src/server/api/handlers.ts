@@ -6,6 +6,7 @@
 import { z } from "zod";
 
 import { findTarget } from "~/lib/applications/targets";
+import { buildFillPlan } from "~/lib/applications/fill-plan";
 import { applyReview, CONTACT_FIELDS, toReview, type ProfileReview } from "~/lib/profile/review";
 import type { CandidateProfile } from "~/lib/profile/schema";
 import { RepoError, type ApplicationRecord, type Repos } from "~/server/repos/types";
@@ -272,4 +273,16 @@ export async function applicationLogsHandler(userId: string | null, id: string, 
       logs: (latest?.logs ?? []).map((l) => ({ at: l.at.toISOString(), level: l.level, message: l.message })),
     },
   };
+}
+
+/** Fill plan for the extension handoff (only for filled, reviewable applications). */
+export async function fillPlanHandler(userId: string | null, id: string, deps: ApiDeps): Promise<ApiResult> {
+  if (!userId) return unauth();
+  const app = await deps.repos.applications.get(userId, id);
+  if (!app) return err(404, "Application not found.", "not_found");
+  if (app.status !== "ready_for_review" || !app.report) return err(409, "Run the autofill first; the handoff uses its verified answers.", "not_ready");
+  const rec = app.resumeId ? await deps.repos.resumes.get(userId, app.resumeId) : null;
+  const bytes = rec ? await deps.storage.get(rec.storageKey) : null;
+  const plan = buildFillPlan(app, rec && bytes ? { filename: rec.filename, bytes } : null);
+  return { status: 200, body: { plan } };
 }

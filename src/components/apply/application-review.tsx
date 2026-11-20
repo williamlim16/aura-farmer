@@ -42,6 +42,22 @@ export function ApplicationReview({ initial }: { initial: ApplicationDTO }) {
   const [message, setMessage] = useState("");
   const [confirmSubmitted, setConfirmSubmitted] = useState(false);
   const [shotVersion, setShotVersion] = useState(initial.updatedAt);
+  const [handoff, setHandoff] = useState("");
+
+  async function sendToExtension() {
+    setHandoff("Preparing…");
+    const r = await apiFetch<{ plan: { applicationId: string; fields: unknown[] } }>(`/api/applications/${app.id}/fill-plan`);
+    if (!r.ok) return setHandoff(r.error);
+    let acked = false;
+    const onAck = (e: MessageEvent<{ type?: string }>) => {
+      if (e.source === window && e.origin === window.location.origin && e.data?.type === "aura-farmer:fill-plan-received") acked = true;
+    };
+    window.addEventListener("message", onAck);
+    window.postMessage({ type: "aura-farmer:fill-plan", plan: r.data.plan }, window.location.origin);
+    await new Promise((res) => setTimeout(res, 1200));
+    window.removeEventListener("message", onAck);
+    setHandoff(acked ? `Sent ${r.data.plan.fields.length} answers to your browser extension. Open the employer's application page, click the Aura Farmer extension, then review and submit yourself.` : "The Aura Farmer extension was not detected in this browser. Install it (Chrome: chrome://extensions → Load unpacked → the repo's extension/ folder), reload this page and try again.");
+  }
   const view = statusView(app.status);
 
   const refresh = useCallback(async () => {
@@ -139,6 +155,13 @@ export function ApplicationReview({ initial }: { initial: ApplicationDTO }) {
               </Button>
             )}
           </div>
+          {app.status === "ready_for_review" && (
+            <div className="flex flex-col gap-2 border-t pt-3">
+              <p className="text-sm">Fill the real application in your own browser with these reviewed answers:</p>
+              <div><Button variant="outline" onClick={() => void sendToExtension()}>Send to browser extension</Button></div>
+              {handoff && <p role="status" className="text-muted-foreground text-sm">{handoff}</p>}
+            </div>
+          )}
           {app.status === "ready_for_review" && (
             <div className="flex flex-col gap-2 border-t pt-3">
               <label className="flex items-start gap-2 text-sm">
