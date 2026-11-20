@@ -19,6 +19,8 @@ export interface ProviderUsage {
   outputTokens: number;
   /** Measured from provider-reported usage and a configured price table; 0 if unknown. */
   costUsd: number;
+  /** true if token counts came from real provider metadata; false = mock/estimate. */
+  measured?: boolean;
 }
 
 /**

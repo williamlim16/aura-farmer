@@ -98,7 +98,7 @@ describe("ambiguous form", () => {
       for (const banned of ["Gender", "Current salary", "haiku", "privacy policy"]) expect(sent).not.toContain(banned);
       expect(byLabel(report, /Country of residence/)).toMatchObject({ tier: "rule", outcome: "verified", value: "Australia" }); // rules now handle it
       expect(byLabel(report, /Why do you want/)).toMatchObject({ tier: "llm", outcome: "verified", reviewRequired: true });
-      expect(byLabel(report, /Kubernetes/)).toMatchObject({ tier: "llm", outcome: "needs_human" });
+      expect(byLabel(report, /Kubernetes/)).toMatchObject({ tier: "rule", outcome: "needs_human" }); // never sent to the model
       expect(report.metrics.llmCalls).toBe(1);
       expect(server.posts).toHaveLength(0);
     } finally {

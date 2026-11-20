@@ -20,11 +20,40 @@ export interface LlmRequest {
   system: string;
   user: string;
   maxOutputTokens: number;
+  /** JSON schema the provider should enforce server-side, when supported. */
+  outputSchema?: Record<string, unknown>;
 }
 export interface LlmResponse {
   text: string;
   usage: { inputTokens: number; outputTokens: number };
+  /** true when usage comes from the provider's response metadata (real API); false/undefined = estimate. */
+  measured?: boolean;
+  /** Model that actually produced the answer (may differ after a server-side fallback). */
+  servedBy?: string;
 }
+
+/** JSON schema matching answerSchema, for providers that support structured outputs. */
+export const ANSWER_JSON_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    answers: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          value: { type: "string" },
+          confidence: { type: "number" },
+          needs_confirmation: { type: "boolean" },
+        },
+        required: ["id", "value", "confidence", "needs_confirmation"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["answers"],
+  additionalProperties: false,
+};
 export interface LlmClient {
   readonly model: string;
   complete(req: LlmRequest): Promise<LlmResponse>;
@@ -58,7 +87,8 @@ Return only JSON: {"answers":[{"id":string,"value":string,"confidence":number,"n
 
 function profileForPrompt(p: CandidateProfile) {
   return {
-    name: p.contact.fullName?.value,
+    // Deliberately no name, email, phone or links: answers never need them and
+    // contact fields are filled by rules. Location helps with country/relocation.
     location: p.contact.location?.value,
     summary: p.summary,
     totalYearsExperience: p.totalYearsExperience?.value,
@@ -91,7 +121,7 @@ function extractJson(text: string): unknown {
 export class LlmProvider implements DecisionProvider {
   readonly tier = "llm" as const;
   readonly name: string;
-  private stats: ProviderUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  private stats: ProviderUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, measured: false };
 
   constructor(
     private readonly client: LlmClient,
@@ -122,12 +152,13 @@ export class LlmProvider implements DecisionProvider {
     this.stats.calls++;
     let res: LlmResponse;
     try {
-      res = await this.client.complete({ system: LLM_SYSTEM_PROMPT, user: buildLlmUserPrompt(batch, ctx), maxOutputTokens: 300 + 150 * batch.length });
+      res = await this.client.complete({ system: LLM_SYSTEM_PROMPT, user: buildLlmUserPrompt(batch, ctx), maxOutputTokens: 300 + 150 * batch.length, outputSchema: ANSWER_JSON_SCHEMA });
     } catch (err) {
       const reason = `LLM unavailable: ${err instanceof Error ? err.message.slice(0, 80) : "error"}`;
       for (const b of batch) out.set(b.field.id, { action: "human", reason, tier: "llm" });
       return;
     }
+    if (res.measured) this.stats.measured = true;
     this.stats.inputTokens += res.usage.inputTokens;
     this.stats.outputTokens += res.usage.outputTokens;
     if (this.opts.pricing) {

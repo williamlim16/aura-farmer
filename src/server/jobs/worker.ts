@@ -35,6 +35,8 @@ export interface WorkerOptions {
   pollMs?: number;
   /** Extra decision tiers (e.g. LLM) when an application opted in. Rules always run first. */
   extraProviders?: (app: ApplicationRecord) => DecisionProvider[] | Promise<DecisionProvider[]>;
+  /** Selection tier (Jev) used for every application when configured; runs after rules, before any LLM. */
+  selectionProviders?: () => DecisionProvider[];
   logger?: Pick<Console, "info" | "warn" | "error">;
 }
 
@@ -47,7 +49,7 @@ export class BrowserWorker {
   private browser: Browser | null = null;
   private running = false;
   private loop: Promise<void> | null = null;
-  private readonly o: Required<Omit<WorkerOptions, "extraProviders" | "logger">> & Pick<WorkerOptions, "extraProviders"> & { logger: Pick<Console, "info" | "warn" | "error"> };
+  private readonly o: Required<Omit<WorkerOptions, "extraProviders" | "selectionProviders" | "logger">> & Pick<WorkerOptions, "extraProviders" | "selectionProviders"> & { logger: Pick<Console, "info" | "warn" | "error"> };
 
   constructor(opts: WorkerOptions) {
     this.workerId = opts.workerId ?? `worker-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
@@ -102,8 +104,9 @@ export class BrowserWorker {
         else await log("warn", "Resume file not found; resume upload fields will need manual input.");
       }
 
-      const providers: DecisionProvider[] = [new RuleProvider(), ...(app.useLlm && this.o.extraProviders ? await this.o.extraProviders(app) : [])];
-      if (app.useLlm && providers.length === 1) await log("warn", "LLM fallback requested but no LLM provider is configured; using rules only.");
+      const llm = app.useLlm && this.o.extraProviders ? await this.o.extraProviders(app) : [];
+      const providers: DecisionProvider[] = [new RuleProvider(), ...(this.o.selectionProviders?.() ?? []), ...llm];
+      if (app.useLlm && llm.length === 0) await log("warn", "LLM fallback requested but no LLM provider is configured; using rules only.");
       await log("info", `Opening test form "${target.title}" (${providers.map((p) => p.name).join(" → ")}).`);
 
       const t0 = Date.now();

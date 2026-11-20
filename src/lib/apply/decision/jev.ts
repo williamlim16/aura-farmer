@@ -1,9 +1,9 @@
 /**
  * Tier B: "TypeSafe Jev" adapter.
  *
- * Status: INTERFACE ONLY. We do not have Jev access or documentation yet, so
- * this file defines the contract the decision engine needs and validates
- * whatever a client returns. No benchmark numbers exist for this tier.
+ * Provider-neutral contract for the Jev tier. A concrete client for TypeSafe's
+ * documented API lives in src/server/llm/typesafe-jev.ts (untested against the
+ * real service: no key yet). No benchmark numbers exist for real Jev.
  *
  * Intended use: cheap, typed decisions for ambiguous-but-bounded UI choices
  * (e.g. which option of a select matches "Australia", whether an unlabeled
@@ -33,8 +33,32 @@ export const jevResponseSchema = z.object({
 });
 export type JevResponse = z.infer<typeof jevResponseSchema>;
 
+export interface JevResult {
+  responses: unknown[];
+  usage?: { inputTokens: number; outputTokens: number };
+}
+
 export interface JevClient {
-  decide(requests: JevRequest[]): Promise<unknown[]>;
+  /** `context.facts`: minimal candidate facts (no contact details) to decide against. */
+  decide(requests: JevRequest[], context?: { facts: Record<string, unknown> }): Promise<unknown[] | JevResult>;
+}
+
+/** Minimal, non-identifying candidate facts for selection decisions. */
+export function candidateFacts(ctx: DecisionContext): Record<string, unknown> {
+  const p = ctx.profile;
+  return {
+    location: p.contact.location?.value,
+    totalYearsExperience: p.totalYearsExperience?.value,
+    currentTitle: p.experience[0]?.title,
+    skills: p.skills.slice(0, 30),
+    preferences: {
+      workAuthorization: p.preferences.workAuthorization,
+      needsSponsorship: p.preferences.needsSponsorship,
+      willingToRelocate: p.preferences.willingToRelocate,
+      referralSource: p.preferences.referralSource,
+      noticePeriod: p.preferences.noticePeriod,
+    },
+  };
 }
 
 export class JevProvider implements DecisionProvider {
@@ -44,7 +68,7 @@ export class JevProvider implements DecisionProvider {
 
   constructor(
     private readonly client: JevClient | null,
-    private readonly opts: { minConfidence?: number; candidates?: (i: DecisionInput, c: DecisionContext) => string[] } = {},
+    private readonly opts: { minConfidence?: number; candidates?: (i: DecisionInput, c: DecisionContext) => string[]; pricing?: { inputPerMTok: number; outputPerMTok: number } } = {},
   ) {}
 
   usage() {
@@ -64,7 +88,17 @@ export class JevProvider implements DecisionProvider {
     this.stats.calls++;
     let raw: unknown[];
     try {
-      raw = await this.client.decide(reqs);
+      const result = await this.client.decide(reqs, { facts: candidateFacts(ctx) });
+      if (Array.isArray(result)) raw = result;
+      else {
+        raw = result.responses;
+        if (result.usage) {
+          this.stats.inputTokens += result.usage.inputTokens;
+          this.stats.outputTokens += result.usage.outputTokens;
+          this.stats.measured = true;
+          if (this.opts.pricing) this.stats.costUsd += (result.usage.inputTokens * this.opts.pricing.inputPerMTok + result.usage.outputTokens * this.opts.pricing.outputPerMTok) / 1e6;
+        }
+      }
     } catch {
       return out; // tier failure is non-fatal: fall through to the next tier
     }

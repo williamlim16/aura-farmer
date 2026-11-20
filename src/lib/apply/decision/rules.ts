@@ -36,6 +36,8 @@ function countryInLabel(label: string, countries: string[]): string | null {
   return hits.length === 1 ? hits[0]! : null;
 }
 
+const CONTACT_KINDS = new Set<FieldKind>(["first_name", "last_name", "full_name", "email", "phone", "linkedin", "github", "website"]);
+
 const normQ = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
 function contactValue(p: CandidateProfile, kind: FieldKind): { value: string; confidence: number } | null {
@@ -103,8 +105,10 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
       return prefs.referralSource ? fitToField(field, prefs.referralSource, 1) : null;
     case "years_experience": {
       const y = p.totalYearsExperience;
-      // Skill-specific years ("years with Kubernetes") are not the total.
-      if (!y || /\b(?:with|in|using)\s+\w/i.test(field.label)) return null;
+      // Skill-specific years ("years with Kubernetes") are not the total, and the
+      // profile has no per-skill years: ask the person instead of letting a model estimate.
+      if (/\b(?:with|in|using)\s+\w/i.test(field.label)) return human("Years with this specific skill are not in your profile.");
+      if (!y) return null;
       if (field.control === "select" || field.control === "radio") {
         const i = field.options.findIndex((o) => {
           const m = /(\d+)\s*(?:-|–|to)\s*(\d+)|(\d+)\s*\+|less than\s*(\d+)|^(\d+)$/i.exec(o);
@@ -120,6 +124,8 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
     }
     default: {
       const v = contactValue(p, cls.kind);
+      // Contact facts are never inferred: if the profile lacks one, no model can supply it.
+      if (!v && CONTACT_KINDS.has(cls.kind)) return human("Not in your profile. Add it on your profile page or fill it in yourself.");
       // "City" fields want "Melbourne", not "Melbourne, VIC, Australia".
       if (v && cls.kind === "location" && /\bcity\b|\bsuburb\b/i.test(field.label) && !/country|address/i.test(field.label)) {
         return fitToField(field, v.value.split(",")[0]!.trim(), Math.min(v.confidence, cls.confidence));

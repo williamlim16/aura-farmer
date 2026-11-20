@@ -8,7 +8,7 @@ import { chromium } from "playwright";
 import { startFormHost } from "~/server/jobs/form-host";
 import { createWorkerRuntime } from "~/server/jobs/runtime";
 import { BrowserWorker } from "~/server/jobs/worker";
-import { createLlmProviders } from "~/server/llm/factory";
+import { createJevProviders, createLlmProviders } from "~/server/llm/factory";
 
 async function main() {
   const rt = createWorkerRuntime();
@@ -19,6 +19,7 @@ async function main() {
     launchBrowser: () => chromium.launch({ headless: process.env.WORKER_HEADED !== "1" }),
     jobTimeoutMs: Number(process.env.WORKER_JOB_TIMEOUT_MS ?? 90_000),
     extraProviders: () => createLlmProviders(process.env),
+    selectionProviders: () => createJevProviders(process.env),
   });
   worker.start();
   console.log(`[worker] ${worker.workerId} polling; test forms on ${formHost.origin}`);
