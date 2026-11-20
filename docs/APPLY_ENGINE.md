@@ -46,7 +46,12 @@ Safety properties, each covered by tests:
 
   The `trap.html` fixture tries all three submit routes, and the test server confirms no POST arrived.
 
-**Jev**: `JevProvider` is a typed adapter only. It validates responses with zod, and abstains when no client is configured or the output is malformed. There's no real Jev integration and no Jev benchmark yet.
+**Jev** (TypeSafe's System One model, researched 2026-11-21 from docs.typesafe.ai):
+- **What it is:** a hosted API (`POST /v1/systemone`). Its `choice` primitive returns the chosen option, per-option probabilities and a confidence score, for up to 255 options, with all questions answered in one call. That fits "select from a constrained candidate set".
+- **What's built:** `src/server/llm/typesafe-jev.ts` follows the documented shapes and is tested against a fake `fetch`.
+- **Not validated:** it hasn't run against the real API, because there's no key. Access is described as early access, and pricing is only on the vendor homepage.
+- **Benchmark finding:** on our current forms the rules already resolve every bounded-option field, so a Jev tier decided 0 fields. It needs harder option-matching cases before its value can be judged.
+- **Reference:** the third-party `jev-browser` (MIT, single maintainer) uses the same pattern for picking browser actions.
 
 ## Tests (`pnpm test`, 89 tests incl. connected workflow — see LOCAL_DEMO.md)
 
@@ -57,7 +62,7 @@ Safety properties, each covered by tests:
 | `tests/apply/decision.test.ts` | unit | Classifier, option matching, AI-directed questions, tier ordering, budget, guard |
 | `tests/apply/autofill.e2e.test.ts` | headless Chromium plus local fixture server; **LLM mocked** | Basic, ambiguous, dynamic and trap forms; outage recovery; invalid LLM options |
 
-## Benchmark (`pnpm bench:apply`)
+## Benchmark (`pnpm bench:apply`): see the latest `bench-results/*.json`; the table below is from the first version
 
 Rules tier vs. rules plus a **scripted mock** LLM, run on the four synthetic forms (median of 3 runs):
 
