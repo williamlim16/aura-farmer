@@ -110,7 +110,14 @@ export class BrowserWorker {
       await log("info", `Opening test form "${target.title}" (${providers.map((p) => p.name).join(" → ")}).`);
 
       const t0 = Date.now();
-      const result = await runApplication({
+      // Abort (cancel / timeout / lost lease) must end the job even if a browser call never settles.
+      const aborted = new Promise<never>((_, reject) => {
+        const fire = () => reject(new RunAbortedError(String(ac.signal.reason ?? "aborted")));
+        if (ac.signal.aborted) fire();
+        else ac.signal.addEventListener("abort", fire, { once: true });
+      });
+      aborted.catch(() => undefined);
+      const result = await Promise.race([aborted, runApplication({
         formUrl: this.o.formHost.urlFor(target.file),
         profile: app.profileSnapshot,
         resume,
@@ -120,7 +127,7 @@ export class BrowserWorker {
         browser: await this.getBrowser(),
         signal: ac.signal,
         onEvent: (level, m) => void log(level, m),
-      });
+      })]);
 
       const m = result.report.metrics;
       await log("info", `Filled ${m.verified}/${m.fields} fields in ${((Date.now() - t0) / 1000).toFixed(1)}s; ${m.needsHuman} need review; ${m.errors + m.mismatches} problems; ${m.llmCalls} model calls.`);

@@ -135,3 +135,22 @@ describe("getStorage", () => {
     expect(s.driver).toBe("s3");
   });
 });
+
+describe("S3Storage.check (mocked client, no network)", () => {
+  const cfg = { endpoint: "https://ref.storage.supabase.co/storage/v1/s3", region: "ap-southeast-1", bucket: "b", accessKeyId: "k", secretAccessKey: "s" };
+  const clientThrowing = (status: number) => ({ send: async () => { throw Object.assign(new Error("UnknownError"), { name: "UnknownError", $metadata: { httpStatusCode: status } }); } }) as never;
+  it("reports a wrong bucket and a wrong region/key clearly from HEAD status codes", async () => {
+    const { S3Storage } = await import("~/server/storage/s3");
+    const missing = await new S3Storage(cfg, clientThrowing(404)).check();
+    expect(missing).toMatchObject({ ok: false, error: { code: "config", message: expect.stringContaining("BUCKET_NAME") } });
+    const forbidden = await new S3Storage(cfg, clientThrowing(403)).check();
+    expect(forbidden).toMatchObject({ ok: false, error: { code: "config", message: expect.stringContaining("BUCKET_REGION") } });
+  });
+  it("is read-only: only HeadBucket and ListObjectsV2", async () => {
+    const { S3Storage } = await import("~/server/storage/s3");
+    const sent: string[] = [];
+    const client = { send: async (c: { constructor: { name: string } }) => { sent.push(c.constructor.name); return { KeyCount: 0 }; } } as never;
+    expect(await new S3Storage(cfg, client).check()).toEqual({ ok: true, sampleKeyCount: 0 });
+    expect(sent).toEqual(["HeadBucketCommand", "ListObjectsV2Command"]);
+  });
+});

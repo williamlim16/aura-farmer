@@ -1,6 +1,8 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   S3ServiceException,
@@ -66,6 +68,25 @@ export class S3Storage implements ObjectStorage {
           secretAccessKey: config.secretAccessKey,
         },
       });
+  }
+
+  /** Read-only connectivity check: bucket reachable and listable with these credentials. Writes nothing. */
+  async check(): Promise<{ ok: true; sampleKeyCount: number } | { ok: false; error: StorageError }> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.config.bucket }));
+    } catch (err) {
+      // HEAD responses have no body, so the SDK cannot name the error; use the status.
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      if (status === 404) return { ok: false, error: new StorageError("Storage bucket not found: check BUCKET_NAME.", "config", err) };
+      if (status === 403 || status === 400) return { ok: false, error: new StorageError("Storage request rejected: check BUCKET_REGION matches the project region and the S3 key pair belongs to this project.", "config", err) };
+      return { ok: false, error: classifyS3Error(err) };
+    }
+    try {
+      const r = await this.client.send(new ListObjectsV2Command({ Bucket: this.config.bucket, MaxKeys: 1 }));
+      return { ok: true, sampleKeyCount: r.KeyCount ?? 0 };
+    } catch (err) {
+      return { ok: false, error: classifyS3Error(err) };
+    }
   }
 
   async put(key: string, body: Uint8Array, contentType: string) {
