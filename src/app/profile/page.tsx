@@ -9,13 +9,13 @@ import {
   GraduationCap,
   Home,
   KeyRound,
-  ShieldCheck,
 } from "lucide-react";
 
 import { AuraBackdrop } from "~/components/aura-backdrop";
 import { BrandLogo } from "~/components/brand-logo";
 import { LogoutButton } from "~/components/logout-button";
 import { ProfileEditor } from "~/components/profile/profile-editor";
+import { ResumeCard } from "~/components/profile/resume-card";
 import { ThemeToggle } from "~/components/theme-toggle";
 import { Badge } from "~/components/ui/badge";
 import { buttonVariants } from "~/components/ui/button";
@@ -31,9 +31,11 @@ import { db } from "~/server/db";
 import {
   educations,
   experiences,
+  resumes,
   userProfiles,
   type Education,
   type Experience,
+  type Resume,
   type UserProfile,
 } from "~/server/db/schema";
 
@@ -70,30 +72,38 @@ export default async function ProfilePage() {
   let profile: UserProfile | null = null;
   let userExperiences: Experience[] = [];
   let userEducations: Education[] = [];
+  let userResumes: Resume[] = [];
   let dbAvailable = true;
 
   try {
-    const [profileRows, experienceRows, educationRows] = await Promise.all([
-      db
-        .select()
-        .from(userProfiles)
-        .where(eq(userProfiles.userId, userId))
-        .limit(1),
-      db
-        .select()
-        .from(experiences)
-        .where(eq(experiences.userId, userId))
-        .orderBy(desc(experiences.startDate), desc(experiences.createdAt)),
-      db
-        .select()
-        .from(educations)
-        .where(eq(educations.userId, userId))
-        .orderBy(desc(educations.startDate), desc(educations.createdAt)),
-    ]);
+    const [profileRows, experienceRows, educationRows, resumeRows] =
+      await Promise.all([
+        db
+          .select()
+          .from(userProfiles)
+          .where(eq(userProfiles.userId, userId))
+          .limit(1),
+        db
+          .select()
+          .from(experiences)
+          .where(eq(experiences.userId, userId))
+          .orderBy(desc(experiences.startDate), desc(experiences.createdAt)),
+        db
+          .select()
+          .from(educations)
+          .where(eq(educations.userId, userId))
+          .orderBy(desc(educations.startDate), desc(educations.createdAt)),
+        db
+          .select()
+          .from(resumes)
+          .where(eq(resumes.userId, userId))
+          .orderBy(desc(resumes.createdAt)),
+      ]);
 
     profile = profileRows[0] ?? null;
     userExperiences = experienceRows;
     userEducations = educationRows;
+    userResumes = resumeRows;
   } catch (err) {
     dbAvailable = false;
     console.error("Failed to load profile data:", err);
@@ -332,11 +342,23 @@ export default async function ProfilePage() {
                       {userEducations.length > 0 ? "Added" : "Pending"}
                     </Badge>
                   </li>
+                  <li className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Resume / CV</span>
+                    <Badge
+                      variant={userResumes.length > 0 ? "teal" : "outline"}
+                      className="font-mono text-[11px]"
+                    >
+                      {userResumes.length > 0 ? "Uploaded" : "Pending"}
+                    </Badge>
+                  </li>
                 </ul>
               </CardContent>
             </Card>
 
-            
+            <ResumeCard
+              initialResumes={userResumes}
+              dbAvailable={dbAvailable}
+            />
           </div>
         </section>
       </main>
