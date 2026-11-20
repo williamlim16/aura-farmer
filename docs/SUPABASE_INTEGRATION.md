@@ -2,20 +2,15 @@
 
 Everything in this branch runs without Supabase (`STORAGE_DRIVER=memory`, the default outside production). This list covers what to verify and change once someone has Dashboard access.
 
-## 1. The `SignatureDoesNotMatch` upload error
+## 1. Storage (S3 API): confirmed and verified
 
-**Probable cause: the region and bucket name in `.env.local` don't match the project.** These are observations from a read-only probe, not confirmed settings.
+The team confirmed the settings on 2026-11-21: endpoint `https://<project-ref>.storage.supabase.co/storage/v1/s3`, region `ap-southeast-1`, bucket `aura-farmer-bucket`.
 
-These findings come from read-only S3 `ListObjects`/`ListBuckets` calls made with the local key pair on 2026-11-21. No uploads were made and no secrets were printed. Confirm them in the Dashboard before changing anything.
+- **Read-only check:** the app's `S3Storage.check()` succeeded with those settings.
+- **One write round trip:** with approval, `scripts/s3-upload-smoke.ts` uploaded a synthetic PDF, read it back byte for byte, and deleted it.
+- **The earlier `SignatureDoesNotMatch`:** caused by a wrong region (`ap-southeast-2`) in a local env file. A wrong bucket name would have failed next. Both now produce clear `storage_config` messages.
 
-| Setting | In `.env.local` | What the probe saw |
-|---|---|---|
-| `BUCKET_REGION` | `ap-southeast-2` | Requests are only accepted when signed with `ap-southeast-1` (or the generic `us-east-1`). Every other region returns `SignatureDoesNotMatch`. |
-| `BUCKET_NAME` | a 7-character name | Not found. The only bucket visible to these keys is `aura-farmer-bucket`. |
-| Endpoint, key format | — | Fine. Endpoint is `https://<ref>.storage.supabase.co/storage/v1/s3`, matching `NEXT_PUBLIC_SUPABASE_URL`. Key lengths are 32 and 64 hex characters. |
-| Checksum headers (newer AWS SDK) | — | Not the cause. The error is the same with `requestChecksumCalculation: "WHEN_REQUIRED"`. |
-
-The storage layer now reports these failures as `storage_config`, with a hint in the server logs, instead of a generic 500 (`src/server/storage/s3.ts`, `classifyS3Error`).
+Outside production, S3 needs `ALLOW_DEV_S3=1` (see `docs/LOCAL_SETUP.md`).
 
 ## 2. What to verify in the Dashboard
 

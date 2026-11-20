@@ -13,7 +13,8 @@ if (!process.argv.includes("--yes-write")) {
   console.error("This writes (then deletes) one synthetic object in the shared bucket. Re-run with --yes-write after approval.");
   process.exit(2);
 }
-const storage = getStorage({ ...process.env, STORAGE_DRIVER: "s3", NODE_ENV: "development" });
+// --yes-write is the deliberate opt-in for this one run.
+const storage = getStorage({ ...process.env, STORAGE_DRIVER: "s3", ALLOW_DEV_S3: "1", NODE_ENV: "development" });
 if (!(storage instanceof S3Storage)) throw new Error("STORAGE_DRIVER=s3 is required.");
 const pre = await storage.check();
 if (!pre.ok) throw pre.error;

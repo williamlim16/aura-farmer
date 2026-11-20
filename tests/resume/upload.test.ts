@@ -123,6 +123,13 @@ describe("getStorage", () => {
       expect((e as Error).message).not.toContain("BUCKET_NAME");
     }
   });
+  it("requires a deliberate opt-in for S3 outside production", () => {
+    const s3env = { BUCKET_S3_ENDPOINT: "https://ref.storage.supabase.co/storage/v1/s3", BUCKET_REGION: "ap-southeast-1", BUCKET_NAME: "b", BUCKET_ACCESS_KEY: "k", BUCKET_SECRET_KEY: "s", STORAGE_DRIVER: "s3" };
+    expect(() => getStorage({ ...s3env, NODE_ENV: "development" } as unknown as NodeJS.ProcessEnv)).toThrow(/ALLOW_DEV_S3=1/);
+    expect(getStorage({ ...s3env, NODE_ENV: "development", ALLOW_DEV_S3: "1" } as unknown as NodeJS.ProcessEnv).driver).toBe("s3");
+    expect(getStorage({ NODE_ENV: "development", STORAGE_DRIVER: "file" } as unknown as NodeJS.ProcessEnv).driver).toBe("file");
+  });
+
   it("builds S3 storage when fully configured (no network call)", () => {
     const s = getStorage({
       NODE_ENV: "production",

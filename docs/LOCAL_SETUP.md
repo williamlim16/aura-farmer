@@ -26,6 +26,30 @@ Then:
 
 A synthetic resume: `npx tsx -e "import('./tests/helpers/resume-fixtures.ts').then(async m=>require('fs').writeFileSync('synthetic-cv.pdf', await m.makePdf()))"`. You can also use the download link in the older standalone demo (`pnpm demo`, port 4317), which is still available but superseded by the integrated app.
 
+## Supabase Storage (S3), deliberately
+
+Local development stores uploads on disk (`.data/storage`) or in memory. The team bucket is shared, so using it from a laptop is opt-in:
+
+```bash
+# in .env.local (gitignored) - values from the Supabase Dashboard > Storage > S3 Connection
+BUCKET_S3_ENDPOINT=https://<project-ref>.storage.supabase.co/storage/v1/s3
+BUCKET_REGION=<project-region>
+BUCKET_NAME=<bucket-name>
+BUCKET_ACCESS_KEY=...          # server-only secret
+BUCKET_SECRET_KEY=...          # server-only secret
+# Enable BOTH to use the shared bucket:
+# STORAGE_DRIVER=s3
+# ALLOW_DEV_S3=1
+```
+
+Without `ALLOW_DEV_S3=1`, `STORAGE_DRIVER=s3` is refused outside production with a clear message. Production uses S3 by default.
+
+To verify a configuration:
+- **Read-only check:** `S3Storage.check()` runs a HeadBucket plus a one-key list, and writes nothing.
+- **One write round trip:** `npx tsx --env-file=.env.local scripts/s3-upload-smoke.ts --yes-write` uploads a synthetic PDF under `local-smoke/`, reads it back, compares the bytes and deletes it. It refuses to run without `--yes-write`.
+
+The test suite never touches S3: `vitest.config.ts` pins `STORAGE_DRIVER=memory`.
+
 ## Why mock auth is safe
 
 - It's a separate script under `scripts/dev/` that no app code imports.
@@ -50,6 +74,7 @@ A synthetic resume: `npx tsx -e "import('./tests/helpers/resume-fixtures.ts').th
 |---|---|---|
 | `REPO_DRIVER` | `memory` (dev), `postgres` (prod) | Memory is refused in production |
 | `STORAGE_DRIVER` | `memory` (dev), `s3` (prod) | `file` for local multi-process work; memory and file refused in production |
+| `ALLOW_DEV_S3` | unset | Must be `1` to use `STORAGE_DRIVER=s3` outside production (shared bucket) |
 | `FILE_STORAGE_DIR` | `.data/storage` | Dev only |
 | `BUCKET_S3_ENDPOINT` / `BUCKET_REGION` / `BUCKET_NAME` / `BUCKET_ACCESS_KEY` / `BUCKET_SECRET_KEY` | none | S3 storage; secrets are server-only |
 | `LLM_PROVIDER` | unset (rules only) | `mock` (dev only) or `anthropic` |
