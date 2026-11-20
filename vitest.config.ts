@@ -12,6 +12,8 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
+    // Tests must never reach the shared Supabase bucket, even with a local .env.local present.
+    env: { STORAGE_DRIVER: "memory", REPO_DRIVER: "memory" },
     testTimeout: 30_000,
     hookTimeout: 60_000,
   },
