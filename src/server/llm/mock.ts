@@ -1,12 +1,12 @@
 import { ScriptedLlm } from "~/lib/apply/decision/llm";
 
 /**
- * MOCK LLM for the demo. Makes no network calls. It imitates a cautious,
+ * MOCK LLM for local development and tests. Makes no network calls. It imitates a cautious,
  * profile-grounded model: it drafts short free-text answers from the job
  * context and picks a select option only when one matches a known
  * residence country. Everything else it declines (value "").
  */
-export function demoMockLlm() {
+export function createMockLlm() {
   return new ScriptedLlm((fields) =>
     fields.map((f) => {
       if (/why|interest|motivat|tell us|cover note|additional/i.test(f.label) && !f.options?.length) {

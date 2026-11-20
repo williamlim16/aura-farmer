@@ -33,7 +33,7 @@ import { MemoryStorage } from "~/server/storage/memory";
 import { ingestResume } from "~/server/workflow/ingest";
 import { runApplication } from "~/server/workflow/run-application";
 import { makeDocx, makePdf } from "../tests/helpers/resume-fixtures";
-import { demoMockLlm } from "./mock-llm";
+import { createMockLlm as demoMockLlm } from "~/server/llm/mock";
 
 const DEMO_USER = "demo-user"; // synthetic, single local user
 const PUBLIC_DIR = path.resolve(import.meta.dirname, "public");

@@ -149,7 +149,8 @@ export function publicApplication(a: ApplicationRecord, opts: { full?: boolean }
     createdAt: a.createdAt.toISOString(),
     updatedAt: a.updatedAt.toISOString(),
     submittedAt: a.submittedAt?.toISOString() ?? null,
-    ...(opts.full ? { report: a.report } : { summary: a.report ? { verified: a.report.metrics.verified, needsHuman: a.report.metrics.needsHuman, problems: a.report.metrics.errors + a.report.metrics.mismatches } : null }),
+    summary: a.report ? { verified: a.report.metrics.verified, needsHuman: a.report.metrics.needsHuman, problems: a.report.metrics.errors + a.report.metrics.mismatches } : null,
+    ...(opts.full ? { report: a.report } : {}),
   };
 }
 

@@ -9,14 +9,16 @@ export interface ApplicationTarget {
   title: string;
   company: string;
   description: string;
+  /** Synthetic job requirements shown before preparing the application. */
+  requirements?: string[];
   /** File name under /test-forms, served only by the worker's local form host. */
   file: string;
   kind: "test-form";
 }
 
 export const APPLICATION_TARGETS: readonly ApplicationTarget[] = [
-  { key: "full-application", file: "full-application.html", title: "Senior Software Engineer", company: "Example Corp (synthetic)", kind: "test-form", description: "Realistic single-page application: contact, links, resume, work rights, salary, EEO, essay, consent." },
-  { key: "multi-step", file: "multi-step.html", title: "Platform Engineer", company: "Example Labs (synthetic)", kind: "test-form", description: "Three-step form with custom dropdowns, conditional questions and validation errors." },
+  { key: "full-application", file: "full-application.html", title: "Senior Software Engineer", company: "Example Corp (synthetic)", kind: "test-form", description: "Realistic single-page application: contact, links, resume, work rights, salary, EEO, essay, consent.", requirements: ["5+ years building production web applications", "TypeScript, React and Node.js", "Experience with automated testing (Playwright or similar)", "Right to work in Australia"] },
+  { key: "multi-step", file: "multi-step.html", title: "Platform Engineer", company: "Example Labs (synthetic)", kind: "test-form", description: "Three-step form with custom dropdowns, conditional questions and validation errors.", requirements: ["Infrastructure as code and CI/CD", "Go or TypeScript", "On-call experience"] },
   { key: "basic", file: "basic.html", title: "Software Engineer", company: "Example Corp (synthetic)", kind: "test-form", description: "Well-labelled fields with autocomplete hints." },
   { key: "ambiguous", file: "ambiguous.html", title: "Software Engineer", company: "Example Corp (synthetic)", kind: "test-form", description: "Weak labels, similar options, sensitive and AI-directed questions." },
   { key: "dynamic", file: "dynamic.html", title: "Software Engineer", company: "Example Corp (synthetic)", kind: "test-form", description: "Delayed and conditional fields." },
@@ -25,4 +27,29 @@ export const APPLICATION_TARGETS: readonly ApplicationTarget[] = [
 
 export function findTarget(key: unknown): ApplicationTarget | null {
   return typeof key === "string" ? (APPLICATION_TARGETS.find((t) => t.key === key) ?? null) : null;
+}
+
+/** Hosts we may support once a vetted ATS allowlist + SSRF controls exist. Not enabled. */
+export const FUTURE_ATS_HOSTS = ["boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com"];
+
+export type JobUrlCheck = { ok: false; reason: string } | { ok: true; host: string; supported: false; note: string };
+
+/** Validates a pasted job URL. Real job sites are never fetched or filled yet. */
+export function checkJobUrl(raw: string): JobUrlCheck {
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return { ok: false, reason: "Enter a full URL starting with https://." };
+  }
+  if (u.protocol !== "https:") return { ok: false, reason: "Only https:// job links are accepted." };
+  const known = FUTURE_ATS_HOSTS.includes(u.hostname);
+  return {
+    ok: true,
+    host: u.hostname,
+    supported: false,
+    note: known
+      ? `${u.hostname} is on our planned list, but filling real job sites is not enabled yet. Use a test job for now.`
+      : `${u.hostname} is not a supported application site. Filling real job sites is not enabled yet; use a test job for now.`,
+  };
 }

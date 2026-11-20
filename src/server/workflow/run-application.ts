@@ -32,6 +32,17 @@ export interface RunApplicationInput {
   headed?: boolean;
   /** Keep the context open (headed demo) instead of closing it. Caller must close. */
   keepOpen?: boolean;
+  /** Abort (cancel/timeout): closes the browser context so in-flight steps fail fast. */
+  signal?: AbortSignal;
+  /** Page console errors and failed requests, for execution logs. */
+  onEvent?: (level: "info" | "warn", message: string) => void;
+}
+
+export class RunAbortedError extends Error {
+  constructor(readonly reason: string) {
+    super(`Run aborted: ${reason}`);
+    this.name = "RunAbortedError";
+  }
 }
 
 export interface RunApplicationResult {
@@ -47,6 +58,7 @@ function safeFilename(name: string, kind: ResumeKind) {
 }
 
 export async function runApplication(input: RunApplicationInput): Promise<RunApplicationResult> {
+  if (input.signal?.aborted) throw new RunAbortedError(String(input.signal.reason ?? "aborted"));
   const target = new URL(input.formUrl);
   const allowed = new Set(input.allowedOrigins.map((o) => new URL(o).origin));
   if (!allowed.has(target.origin)) throw new Error(`Form origin ${target.origin} is not allowed.`);
@@ -63,6 +75,9 @@ export async function runApplication(input: RunApplicationInput): Promise<RunApp
     }
 
     context = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+    const ctx = context;
+    const onAbort = () => void ctx.close().catch(() => undefined);
+    input.signal?.addEventListener("abort", onAbort, { once: true });
     const blockedEgress: string[] = [];
     // Egress allowlist first, then the submit guard (its route is checked first by Playwright: last registered wins).
     await context.route("**/*", async (route) => {
@@ -82,14 +97,22 @@ export async function runApplication(input: RunApplicationInput): Promise<RunApp
     });
     const guard = await installSubmitGuard(context);
     const page = await context.newPage();
+    page.on("console", (m) => {
+      if (m.type() === "error") input.onEvent?.("warn", `Page console error: ${m.text().slice(0, 200)}`);
+    });
+    page.on("pageerror", (e) => input.onEvent?.("warn", `Page script error: ${e.message.slice(0, 200)}`));
     await page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout: 15_000 });
 
     const engine = new DecisionEngine(input.providers);
     const report = await runAutofill(page, engine, { profile: input.profile, hasResume: !!input.resume, job: input.job }, { resumePath, guard });
     const screenshotPng = await page.screenshot({ fullPage: true });
+    if (input.signal?.aborted) throw new RunAbortedError(String(input.signal.reason ?? "aborted"));
 
     if (input.keepOpen) return { report, screenshotPng, blockedEgress, context };
     return { report, screenshotPng, blockedEgress };
+  } catch (e) {
+    if (input.signal?.aborted) throw new RunAbortedError(String(input.signal.reason ?? "aborted"));
+    throw e;
   } finally {
     if (!input.keepOpen) await context?.close().catch(() => undefined);
     if (ownsBrowser && !input.keepOpen) await browser.close().catch(() => undefined);
