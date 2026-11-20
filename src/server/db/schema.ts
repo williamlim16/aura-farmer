@@ -103,9 +103,35 @@ export const educations = createTable(
   (t) => [index("education_user_id_idx").on(t.userId)],
 );
 
+/** Uploaded resume files stored in Supabase Storage and owned by the authenticated user. */
+export const resumes = createTable(
+  "resume",
+  (d) => ({
+    id: d.uuid().primaryKey().defaultRandom(),
+    userId: d.uuid("user_id").notNull(),
+    fileName: d.varchar("file_name", { length: 512 }).notNull(),
+    storagePath: d.varchar("storage_path", { length: 1024 }).notNull(),
+    bucketId: d
+      .varchar("bucket_id", { length: 256 })
+      .default("aura-farmer-bucket")
+      .notNull(),
+    mimeType: d.varchar("mime_type", { length: 128 }).notNull(),
+    fileSize: d.integer("file_size").notNull(),
+    createdAt: d
+      .timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp("updated_at", { withTimezone: true })
+      .$onUpdate(() => new Date()),
+  }),
+  (t) => [index("resume_user_id_idx").on(t.userId)],
+);
+
 export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   experiences: many(experiences),
   educations: many(educations),
+  resumes: many(resumes),
 }));
 
 export const experiencesRelations = relations(experiences, ({ one }) => ({
@@ -122,9 +148,18 @@ export const educationsRelations = relations(educations, ({ one }) => ({
   }),
 }));
 
+export const resumesRelations = relations(resumes, ({ one }) => ({
+  profile: one(userProfiles, {
+    fields: [resumes.userId],
+    references: [userProfiles.userId],
+  }),
+}));
+
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type NewUserProfile = typeof userProfiles.$inferInsert;
 export type Experience = typeof experiences.$inferSelect;
 export type NewExperience = typeof experiences.$inferInsert;
 export type Education = typeof educations.$inferSelect;
 export type NewEducation = typeof educations.$inferInsert;
+export type Resume = typeof resumes.$inferSelect;
+export type NewResume = typeof resumes.$inferInsert;
