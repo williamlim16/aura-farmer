@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -9,11 +10,18 @@ import { db } from "~/server/db";
 import {
   educations,
   experiences,
+  resumes,
   userProfiles,
   type Education,
   type Experience,
+  type Resume,
   type UserProfile,
 } from "~/server/db/schema";
+import {
+  RESUME_BUCKET,
+  deleteResumeObject,
+  uploadResumeObject,
+} from "~/server/storage/resume-storage";
 
 export type ActionResult<T> =
   { ok: true; data: T } | { ok: false; error: string };
@@ -408,6 +416,186 @@ export async function deleteEducationAction(
     return {
       ok: false,
       error: "Could not delete education entry from the database.",
+    };
+  }
+}
+
+const MAX_RESUME_BYTES = 10 * 1024 * 1024;
+
+const ALLOWED_RESUME_EXTENSIONS = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+} as const;
+
+const ALLOWED_RESUME_MIME_TYPES = new Set<string>([
+  ...Object.values(ALLOWED_RESUME_EXTENSIONS),
+  "application/x-pdf",
+]);
+
+function resolveResumeMimeType(file: File): string | null {
+  const extMatch = /\.[^.]+$/.exec(file.name.trim().toLowerCase());
+  const ext = extMatch?.[0];
+  const extMime =
+    ext && ext in ALLOWED_RESUME_EXTENSIONS
+      ? ALLOWED_RESUME_EXTENSIONS[ext as keyof typeof ALLOWED_RESUME_EXTENSIONS]
+      : null;
+
+  const rawType = file.type.trim().toLowerCase();
+  if (!rawType || rawType === "application/octet-stream") {
+    return extMime;
+  }
+
+  if (rawType === "application/x-pdf") {
+    return "application/pdf";
+  }
+
+  return ALLOWED_RESUME_MIME_TYPES.has(rawType) ? rawType : null;
+}
+
+/** Uploads a resume file to Supabase Storage and records its metadata in PostgreSQL. */
+export async function uploadResumeAction(
+  formData: FormData,
+): Promise<ActionResult<Resume>> {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) {
+    return {
+      ok: false,
+      error: "Please sign in again to upload your resume.",
+    };
+  }
+
+  const entry = formData.get("file");
+  if (!(entry instanceof File) || entry.size === 0) {
+    return { ok: false, error: "Please select a resume file to upload." };
+  }
+
+  if (entry.size > MAX_RESUME_BYTES) {
+    return { ok: false, error: "Resume file must be 10 MB or smaller." };
+  }
+
+  const mimeType = resolveResumeMimeType(entry);
+  if (!mimeType) {
+    return {
+      ok: false,
+      error:
+        "Unsupported file format. Please upload a PDF, DOC, or DOCX resume.",
+    };
+  }
+
+  const rawFileName = entry.name.trim() || "resume";
+  const fileName = rawFileName.slice(0, 512);
+  const safeName =
+    rawFileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-200) || "resume";
+  const storagePath = `${userId}/${randomUUID()}-${safeName}`;
+
+  try {
+    const buffer = Buffer.from(await entry.arrayBuffer());
+    await uploadResumeObject({
+      bucketId: RESUME_BUCKET,
+      storagePath,
+      body: buffer,
+      contentType: mimeType,
+    });
+  } catch (err) {
+    console.error("Failed to upload resume to Supabase Storage:", err);
+    return {
+      ok: false,
+      error: "Could not upload your resume to storage. Please try again.",
+    };
+  }
+
+  try {
+    const [created] = await db
+      .insert(resumes)
+      .values({
+        userId,
+        fileName,
+        storagePath,
+        bucketId: RESUME_BUCKET,
+        mimeType,
+        fileSize: entry.size,
+      })
+      .returning();
+
+    if (!created) {
+      await deleteResumeObject({
+        bucketId: RESUME_BUCKET,
+        storagePath,
+      }).catch((cleanupErr) =>
+        console.error("Failed to clean up orphaned resume object:", cleanupErr),
+      );
+      return { ok: false, error: "Unable to save resume record." };
+    }
+
+    revalidatePath("/profile");
+    return { ok: true, data: created };
+  } catch (err) {
+    await deleteResumeObject({
+      bucketId: RESUME_BUCKET,
+      storagePath,
+    }).catch((cleanupErr) =>
+      console.error("Failed to clean up orphaned resume object:", cleanupErr),
+    );
+    console.error("Failed to save resume record:", err);
+    return {
+      ok: false,
+      error:
+        "Could not save your resume to the database. Ensure the database is running and migrated.",
+    };
+  }
+}
+
+/** Deletes an uploaded resume from Supabase Storage and removes its database record. */
+export async function deleteResumeAction(
+  id: string,
+): Promise<ActionResult<{ id: string }>> {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) {
+    return {
+      ok: false,
+      error: "Please sign in again to delete your resume.",
+    };
+  }
+
+  const parsedId = uuidSchema.safeParse(id);
+  if (!parsedId.success) {
+    return { ok: false, error: "Invalid resume identifier." };
+  }
+
+  try {
+    const [existing] = await db
+      .select()
+      .from(resumes)
+      .where(and(eq(resumes.id, parsedId.data), eq(resumes.userId, userId)))
+      .limit(1);
+
+    if (!existing) {
+      return { ok: false, error: "Resume could not be found." };
+    }
+
+    await deleteResumeObject({
+      bucketId: existing.bucketId,
+      storagePath: existing.storagePath,
+    });
+
+    const [deleted] = await db
+      .delete(resumes)
+      .where(and(eq(resumes.id, existing.id), eq(resumes.userId, userId)))
+      .returning({ id: resumes.id });
+
+    if (!deleted) {
+      return { ok: false, error: "Resume could not be found." };
+    }
+
+    revalidatePath("/profile");
+    return { ok: true, data: deleted };
+  } catch (err) {
+    console.error("Failed to delete resume:", err);
+    return {
+      ok: false,
+      error: "Could not delete resume from storage and database.",
     };
   }
 }
