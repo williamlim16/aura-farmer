@@ -95,7 +95,8 @@ export async function extractForm(target: Page | Frame): Promise<FormField[]> {
       }
 
       const { label, source } = labelFor(el);
-      const control: FormField["control"] =
+      const isCombo = tag !== "select" && el.getAttribute("role") === "combobox";
+      const control: FormField["control"] = isCombo ? "combobox" :
         tag === "select" ? "select" : tag === "textarea" ? "textarea" :
         (["email", "tel", "url", "number", "date", "file", "checkbox"].includes(type) ? type : "text") as FormField["control"];
       out.push({

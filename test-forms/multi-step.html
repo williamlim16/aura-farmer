@@ -1,0 +1,91 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Apply: Platform Engineer at Example Labs (synthetic)</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:640px;margin:24px auto;padding:0 16px}
+ .banner{background:#fef3c7;border:1px solid #f59e0b;padding:8px 12px;border-radius:6px;font-size:13px}
+ label{display:block;margin:12px 0 4px} input[type=text],input[type=email],input[type=tel],textarea{width:100%;padding:6px;box-sizing:border-box}
+ .combo{position:relative} .combo [role=listbox]{position:absolute;z-index:2;background:#fff;border:1px solid #ccc;width:100%;margin:0;padding:0;list-style:none;max-height:180px;overflow:auto}
+ .combo [role=option]{padding:6px;cursor:pointer} .combo [role=option]:hover{background:#eef}
+ .combo .value{display:block;padding:4px 0;color:#111} .error{color:#b91c1c;font-size:13px}
+ [hidden]{display:none!important} .steps{color:#555;font-size:13px}
+</style></head>
+<body>
+<div class="banner">Synthetic multi-step test form. Example Labs is fictional. Submitting is blocked.</div>
+<h1>Platform Engineer: Example Labs</h1>
+<p class="steps" id="step-label">Step 1 of 3</p>
+<form id="app" method="post" action="/submit" novalidate>
+  <section data-step="1">
+    <label for="fname">First name *</label><input type="text" id="fname" name="fname" autocomplete="given-name" required>
+    <label for="lname">Last name *</label><input type="text" id="lname" name="lname" autocomplete="family-name" required>
+    <label for="email">Email *</label><input type="email" id="email" name="email" required aria-describedby="email-err">
+    <p class="error" id="email-err" hidden>Enter a valid email address.</p>
+    <label for="phone">Mobile (digits only, with country code) *</label>
+    <input type="tel" id="phone" name="phone" required aria-describedby="phone-err">
+    <p class="error" id="phone-err" hidden>Use digits only, e.g. 61400555123.</p>
+    <label id="country-label">Country of residence *</label>
+    <div class="combo" data-combo="country"></div>
+    <button type="button" data-next>Next</button>
+  </section>
+  <section data-step="2" hidden>
+    <label id="source-label">How did you hear about us? *</label>
+    <div class="combo" data-combo="source"></div>
+    <fieldset><legend>Are you authorised to work in Australia? *</legend>
+      <label><input type="radio" name="auth" value="yes" required> Yes</label>
+      <label><input type="radio" name="auth" value="no"> No</label></fieldset>
+    <fieldset><legend>Have you been part of an on-call rotation?</legend>
+      <label><input type="radio" name="oncall" value="yes"> Yes</label>
+      <label><input type="radio" name="oncall" value="no"> No</label></fieldset>
+    <div id="oncall-more" hidden><label for="oncall-detail">Describe your on-call experience</label><textarea id="oncall-detail" name="oncall_detail"></textarea></div>
+    <label for="cv">Resume *</label><input type="file" id="cv" name="cv" accept=".pdf,.docx" required>
+    <button type="button" data-back>Back</button> <button type="button" data-next>Continue</button>
+  </section>
+  <section data-step="3" hidden>
+    <label for="why">Why Example Labs? *</label><textarea id="why" name="why" required></textarea>
+    <label><input type="checkbox" name="terms" required> I agree to the terms and conditions *</label>
+    <button type="button" data-back>Back</button> <button type="submit">Submit application</button>
+  </section>
+</form>
+<script>
+// Minimal accessible combobox (react-select-like): typing filters, click selects, value shown in a span.
+const OPTIONS = {
+  country: ["Australia", "Austria", "New Zealand", "United Kingdom", "United States"],
+  source: ["LinkedIn", "Seek", "Referral", "Company website", "Meetup or conference"],
+};
+document.querySelectorAll("[data-combo]").forEach((root) => {
+  const key = root.dataset.combo;
+  root.innerHTML = `<span class="value" data-value></span><input type="text" role="combobox" aria-expanded="false" aria-controls="${key}-list" aria-autocomplete="list" aria-labelledby="${key}-label" name="${key}_search" autocomplete="off"><ul role="listbox" id="${key}-list" hidden></ul><input type="hidden" name="${key}">`;
+  const input = root.querySelector("input[role=combobox]"), list = root.querySelector("ul"), hidden = root.querySelector("input[type=hidden]"), shown = root.querySelector("[data-value]");
+  const render = () => {
+    const q = input.value.toLowerCase();
+    list.innerHTML = OPTIONS[key].filter((o) => o.toLowerCase().includes(q)).map((o) => `<li role="option" tabindex="-1">${o}</li>`).join("");
+  };
+  const open = () => { render(); list.hidden = false; input.setAttribute("aria-expanded", "true"); };
+  input.addEventListener("mousedown", open); input.addEventListener("focus", open); input.addEventListener("input", open);
+  input.addEventListener("keydown", (e) => { if (e.key === "Escape") { list.hidden = true; input.setAttribute("aria-expanded", "false"); } if (e.key === "Enter") e.preventDefault(); });
+  list.addEventListener("mousedown", (e) => {
+    const li = e.target.closest("[role=option]"); if (!li) return;
+    e.preventDefault(); hidden.value = li.textContent; shown.textContent = li.textContent; input.value = "";
+    list.hidden = true; input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-invalid");
+  });
+  input.addEventListener("blur", () => setTimeout(() => { list.hidden = true; input.setAttribute("aria-expanded", "false"); }, 150));
+});
+document.querySelectorAll("input[name=oncall]").forEach((r) => r.addEventListener("change", () => {
+  document.getElementById("oncall-more").hidden = document.querySelector("input[name=oncall]:checked")?.value !== "yes";
+}));
+const steps = [...document.querySelectorAll("[data-step]")];
+let current = 0;
+function validate(section) {
+  let ok = true;
+  const phone = section.querySelector("#phone");
+  if (phone) { const bad = !/^\+?\d{8,15}$/.test(phone.value.trim()); phone.setAttribute("aria-invalid", String(bad)); document.getElementById("phone-err").hidden = !bad; ok = ok && !bad; }
+  const email = section.querySelector("#email");
+  if (email) { const bad = !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value); email.setAttribute("aria-invalid", String(bad)); document.getElementById("email-err").hidden = !bad; ok = ok && !bad; }
+  section.querySelectorAll("[data-combo]").forEach((c) => { if (!c.querySelector("input[type=hidden]").value) { c.querySelector("[role=combobox]").setAttribute("aria-invalid", "true"); ok = false; } });
+  section.querySelectorAll("input[required]:not([type=radio]):not([type=checkbox]):not([type=file])").forEach((i) => { if (!i.value.trim()) ok = false; });
+  section.querySelectorAll("fieldset").forEach((f) => { const req = f.querySelector("input[required]"); if (req && !f.querySelector("input:checked")) ok = false; });
+  return ok;
+}
+function show(i) { steps.forEach((s, j) => (s.hidden = j !== i)); current = i; document.getElementById("step-label").textContent = `Step ${i + 1} of ${steps.length}`; }
+document.querySelectorAll("[data-next]").forEach((b) => b.addEventListener("click", () => { if (validate(steps[current])) show(current + 1); }));
+document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", () => show(current - 1)));
+</script>
+</body></html>

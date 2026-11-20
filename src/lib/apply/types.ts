@@ -2,7 +2,7 @@
 export interface FormField {
   /** Stable id we stamp on the element as data-af-id. */
   id: string;
-  control: "text" | "email" | "tel" | "url" | "number" | "date" | "textarea" | "select" | "radio" | "checkbox" | "file";
+  control: "text" | "email" | "tel" | "url" | "number" | "date" | "textarea" | "select" | "radio" | "checkbox" | "file" | "combobox";
   /** Best human-readable label, and how it was found (lower tiers = less certain). */
   label: string;
   labelSource: "label-for" | "label-wrap" | "aria-labelledby" | "aria-label" | "legend" | "placeholder" | "nearby-text" | "name" | "none";
@@ -24,6 +24,7 @@ export type FieldKind =
   | "email"
   | "phone"
   | "location"
+  | "country"
   | "linkedin"
   | "github"
   | "website"

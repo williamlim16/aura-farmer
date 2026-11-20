@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { LlmProvider, ScriptedLlm } from "~/lib/apply/decision/llm";
 import { RuleProvider } from "~/lib/apply/decision/rules";
-import { autofillFixture, launch, startFixtureServer, writeResumeFile, type FixtureServer } from "../helpers/apply-harness";
+import { autofillFixture, launch, startFixtureServer, syntheticProfile, writeResumeFile, type FixtureServer } from "../helpers/apply-harness";
 
 let browser: Browser;
 let server: FixtureServer;
@@ -71,8 +71,8 @@ describe("ambiguous form", () => {
       expect(await page.locator("[name=q14]").isChecked()).toBe(false);
       // Skill-specific years are not the total: no rule answer, no LLM configured -> human.
       expect(byLabel(report, /Kubernetes/)).toMatchObject({ outcome: "needs_human" });
-      // "Country of residence" has no profile field: left for the person, not guessed.
-      expect(byLabel(report, /Country of residence/).outcome).toBe("needs_human");
+      // Country derived deterministically from the stated location (no model call).
+      expect(byLabel(report, /Country of residence/)).toMatchObject({ kind: "country", tier: "rule", outcome: "verified", value: "Australia" });
       expect(report.fields.some((f) => /honeypot/.test(f.label))).toBe(false);
       expect(report.metrics.llmCalls).toBe(0);
       expect(server.posts).toHaveLength(0);
@@ -96,7 +96,7 @@ describe("ambiguous form", () => {
       expect(llm.requests).toHaveLength(1);
       const sent = llm.requests[0]!.user;
       for (const banned of ["Gender", "Current salary", "haiku", "privacy policy"]) expect(sent).not.toContain(banned);
-      expect(byLabel(report, /Country of residence/)).toMatchObject({ tier: "llm", outcome: "verified", value: "Australia" });
+      expect(byLabel(report, /Country of residence/)).toMatchObject({ tier: "rule", outcome: "verified", value: "Australia" }); // rules now handle it
       expect(byLabel(report, /Why do you want/)).toMatchObject({ tier: "llm", outcome: "verified", reviewRequired: true });
       expect(byLabel(report, /Kubernetes/)).toMatchObject({ tier: "llm", outcome: "needs_human" });
       expect(report.metrics.llmCalls).toBe(1);
@@ -167,7 +167,9 @@ describe("failure recovery", () => {
 
   it("rejects an LLM answer that is not one of the options", async () => {
     const llm = new ScriptedLlm((fields) => fields.map((f) => ({ id: f.id, value: /country/i.test(f.label) ? "Australiaa" : "", confidence: 0.95 })));
-    const { report, context } = await autofillFixture(browser, server, "ambiguous.html", { resumePath, providers: [new RuleProvider(), new LlmProvider(llm)] });
+    const profile = syntheticProfile();
+    delete profile.contact.location; // so rules abstain on country and the LLM is asked
+    const { report, context } = await autofillFixture(browser, server, "ambiguous.html", { resumePath, profile, providers: [new RuleProvider(), new LlmProvider(llm)] });
     expect(byLabel(report, /Country of residence/)).toMatchObject({ outcome: "needs_human", reason: expect.stringContaining("not one of the options") });
     await context.close();
   });

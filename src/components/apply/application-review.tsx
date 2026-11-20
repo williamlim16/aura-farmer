@@ -21,6 +21,8 @@ export interface ApplicationDTO {
     fields: ReportFieldLike[];
     metrics: { fields: number; verified: number; needsHuman: number; errors: number; mismatches: number; requiredCompletion: number; llmCalls: number; durationMs: number };
     blockedSubmits: { inPage: number; network: number };
+    steps?: { step: number; advanced: boolean; stoppedBecause?: string }[];
+    formLocation?: string;
   };
 }
 
@@ -117,6 +119,14 @@ export function ApplicationReview({ initial }: { initial: ApplicationDTO }) {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {app.error && <p role="alert" className="text-destructive text-sm">{app.error}</p>}
+          {app.report?.steps?.filter((s) => s.stoppedBecause).map((s) => (
+            <p key={s.step} className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+              Stopped on step {s.step} of the form: {s.stoppedBecause}
+            </p>
+          ))}
+          {app.report?.formLocation && app.report.formLocation !== "main" && (
+            <p className="text-muted-foreground text-xs">The form was found inside an embedded frame ({app.report.formLocation}).</p>
+          )}
           {app.status === "ready_for_review" && (
             <p className="rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950 dark:text-green-100">
               Nothing was submitted. {blocked > 0 && `The page tried to submit ${blocked} time(s); every attempt was blocked.`}

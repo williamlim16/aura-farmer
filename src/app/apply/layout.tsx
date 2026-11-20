@@ -4,7 +4,7 @@ import { LogoutButton } from "~/components/logout-button";
 
 export default function ApplyLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-background text-foreground min-h-svh">
+    <div className="bg-background text-foreground min-h-svh font-sans">
       <header className="border-b">
         <nav aria-label="Main" className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3 text-sm">
           <Link href="/apply" className="font-semibold">Aura Farmer</Link>

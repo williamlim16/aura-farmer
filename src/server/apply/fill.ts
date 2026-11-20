@@ -1,7 +1,10 @@
-import type { Locator, Page } from "playwright";
+import type { Frame, Locator, Page } from "playwright";
 
 import { pickOption } from "~/lib/apply/option-match";
 import type { FieldDecision } from "~/lib/apply/decision/engine";
+import { fillCombobox } from "./combobox";
+
+type Target = Page | Frame;
 
 export interface FillResult {
   id: string;
@@ -12,7 +15,7 @@ export interface FillResult {
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 
-async function radioOrCheckboxByLabel(page: Page, groupId: string, option: string): Promise<Locator | null> {
+async function radioOrCheckboxByLabel(page: Target, groupId: string, option: string): Promise<Locator | null> {
   const els = page.locator(`[data-af-group="${groupId}"]`);
   const n = await els.count();
   const labels: string[] = [];
@@ -29,12 +32,17 @@ async function radioOrCheckboxByLabel(page: Page, groupId: string, option: strin
   return i >= 0 ? els.nth(i) : null;
 }
 
-async function fillOne(page: Page, fd: FieldDecision, resumePath: string | null): Promise<void> {
+async function fillOne(page: Target, fd: FieldDecision, resumePath: string | null): Promise<void> {
   const { field, decision } = fd;
   const loc = page.locator(`[data-af-id="${field.id}"]`).first();
 
   if (decision.action === "upload") {
     if (!resumePath) throw new Error("no resume file available");
+    const ext = resumePath.split(".").pop()!.toLowerCase();
+    const accept = field.accept.toLowerCase();
+    if (accept && !accept.split(",").some((a) => { const t = a.trim(); return t === `.${ext}` || t === "*/*" || (ext === "pdf" && t === "application/pdf") || (ext === "docx" && t.includes("wordprocessingml")); })) {
+      throw new Error(`this upload only accepts ${field.accept}; your resume is .${ext}`);
+    }
     await loc.setInputFiles(resumePath);
     return;
   }
@@ -42,6 +50,9 @@ async function fillOne(page: Page, fd: FieldDecision, resumePath: string | null)
   const value = decision.value;
 
   switch (field.control) {
+    case "combobox":
+      await fillCombobox(page, loc, String(value), pickOption);
+      return;
     case "select": {
       const i = pickOption(field.options, String(value));
       if (i < 0) throw new Error(`option "${String(value)}" not found`);
@@ -73,9 +84,9 @@ async function fillOne(page: Page, fd: FieldDecision, resumePath: string | null)
 }
 
 /** Fill each decided field independently; one failure never aborts the rest. */
-export async function fillFields(page: Page, decisions: FieldDecision[], opts: { resumePath: string | null; retries?: number; actionTimeoutMs?: number }): Promise<FillResult[]> {
+export async function fillFields(page: Target, decisions: FieldDecision[], opts: { resumePath: string | null; retries?: number; actionTimeoutMs?: number }): Promise<FillResult[]> {
   const results: FillResult[] = [];
-  page.setDefaultTimeout(opts.actionTimeoutMs ?? 3000);
+  if ("setDefaultTimeout" in page) page.setDefaultTimeout(opts.actionTimeoutMs ?? 3000);
   for (const fd of decisions) {
     if (fd.decision.action !== "fill" && fd.decision.action !== "upload") continue;
     let attempts = 0;

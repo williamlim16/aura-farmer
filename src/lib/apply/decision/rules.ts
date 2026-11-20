@@ -13,7 +13,7 @@ const human = (reason: string): Decision => ({ action: "human", reason, tier: "r
 
 /** Resolve a string answer against the field's options (select/radio) if any. */
 function fitToField(field: FormField, value: string, confidence: number): Decision | null {
-  if (field.control === "select" || field.control === "radio") {
+  if (field.control === "select" || field.control === "radio" || (field.control === "combobox" && field.options.length)) {
     const i = pickOption(field.options, value);
     return i >= 0 ? fill(field.options[i]!, confidence) : null;
   }
@@ -21,7 +21,7 @@ function fitToField(field: FormField, value: string, confidence: number): Decisi
 }
 
 function fitBoolean(field: FormField, yes: boolean): Decision | null {
-  if (field.control === "select" || field.control === "radio") {
+  if (field.control === "select" || field.control === "radio" || field.control === "combobox") {
     const i = pickYesNo(field.options, yes);
     return i >= 0 ? fill(field.options[i]!, 0.95) : null;
   }
@@ -93,6 +93,12 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
       return prefs.earliestStartDate ? fitToField(field, prefs.earliestStartDate, 1) : human("Start date not stated.");
     case "relocation":
       return prefs.willingToRelocate === undefined ? human("Relocation preference not stated.") : fitBoolean(field, prefs.willingToRelocate);
+    case "country": {
+      // Last segment of a stated location ("Melbourne, VIC, Australia" -> "Australia").
+      const loc = p.contact.location;
+      const country = loc?.value.split(",").pop()?.trim();
+      return country ? fitToField(field, country, Math.min(loc!.confidence, 0.8)) : null;
+    }
     case "referral_source":
       return prefs.referralSource ? fitToField(field, prefs.referralSource, 1) : null;
     case "years_experience": {
