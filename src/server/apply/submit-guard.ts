@@ -38,7 +38,8 @@ export async function installSubmitGuard(context: BrowserContext): Promise<Submi
     const req = route.request();
     const method = req.method();
     const type = req.resourceType();
-    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && (req.isNavigationRequest() || type === "document" || type === "xhr" || type === "fetch")) {
+    const isBeacon = type === "ping" || type === "beacon";
+    if (isBeacon || (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && (req.isNavigationRequest() || type === "document" || type === "xhr" || type === "fetch"))) {
       blockedNetwork.push({ method, url: req.url(), resourceType: type });
       await route.abort("blockedbyclient");
       return;

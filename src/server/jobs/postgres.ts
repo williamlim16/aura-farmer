@@ -50,12 +50,26 @@ export class PostgresJobQueue implements JobQueue {
   readonly driver = "postgres" as const;
   constructor(private readonly db: Db) {}
 
-  async enqueue(userId: string, applicationId: string, opts: { maxAttempts?: number } = {}) {
+  async enqueue(userId: string, applicationId: string, opts: { maxAttempts?: number; maxActivePerUser?: number } = {}) {
     if (!UUID_RE.test(userId) || !UUID_RE.test(applicationId)) throw new JobError("Application not found.", "not_found");
+    if (opts.maxActivePerUser === undefined) return this.enqueueWith(this.db, userId, applicationId, opts);
+    // Per-user cap: serialise this user's enqueues with a transaction-scoped
+    // advisory lock; under READ COMMITTED the count then sees every committed job.
+    return this.db.transaction(async (tx) => {
+      await rows(tx, sql`select pg_advisory_xact_lock(hashtext(${"apply-enqueue:" + userId}))`);
+      const [c] = await rows(tx, sql`select count(*)::int as n from ${J} where user_id = ${userId} and status in ('queued', 'running')`);
+      if (Number(c?.n ?? 0) >= opts.maxActivePerUser!) {
+        throw new JobError(`You already have ${opts.maxActivePerUser} runs in progress. Wait for one to finish.`, "user_limit");
+      }
+      return this.enqueueWith(tx, userId, applicationId, opts);
+    });
+  }
+
+  private async enqueueWith(db: Db, userId: string, applicationId: string, opts: { maxAttempts?: number }) {
     let r: Row[];
     try {
       r = await rows(
-        this.db,
+        db,
         sql`with app as (
               update ${A} set status = 'queued', error = null, updated_at = now()
               where id = ${applicationId} and user_id = ${userId}
@@ -75,7 +89,7 @@ export class PostgresJobQueue implements JobQueue {
       throw e;
     }
     if (!r[0]) {
-      const exists = await rows(this.db, sql`select status from ${A} where id = ${applicationId} and user_id = ${userId}`);
+      const exists = await rows(db, sql`select status from ${A} where id = ${applicationId} and user_id = ${userId}`);
       if (!exists[0]) throw new JobError("Application not found.", "not_found");
       throw new JobError("A run is already queued or running.", "already_active");
     }
@@ -177,9 +191,10 @@ export class PostgresJobQueue implements JobQueue {
       this.db,
       sql`with j as (
             update ${J} set
-              status = case when ${opts.retryable} and attempts < max_attempts then 'queued' else 'failed' end,
-              run_after = case when ${opts.retryable} and attempts < max_attempts then now() + ${ms(opts.backoffMs ?? 2000)} else run_after end,
-              worker_id = case when ${opts.retryable} and attempts < max_attempts then null else worker_id end,
+              status = case when cancel_requested then 'cancelled'
+                            when ${opts.retryable} and attempts < max_attempts then 'queued' else 'failed' end,
+              run_after = case when not cancel_requested and ${opts.retryable} and attempts < max_attempts then now() + ${ms(opts.backoffMs ?? 2000)} else run_after end,
+              worker_id = case when not cancel_requested and ${opts.retryable} and attempts < max_attempts then null else worker_id end,
               last_error = ${msg}, lease_expires_at = null, updated_at = now()
             where id = ${jobId} and worker_id = ${workerId} and status = 'running'
             returning application_id, user_id, status

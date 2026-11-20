@@ -23,11 +23,14 @@ export class MemoryJobQueue implements JobQueue {
     return j;
   }
 
-  async enqueue(userId: string, applicationId: string, opts: { maxAttempts?: number } = {}) {
+  async enqueue(userId: string, applicationId: string, opts: { maxAttempts?: number; maxActivePerUser?: number } = {}) {
     const app = await this.repos.applications.get(userId, applicationId);
     if (!app) throw new JobError("Application not found.", "not_found");
+    // Checks and insert happen synchronously (no await in between), so concurrent calls cannot interleave.
     if (this.active(applicationId)) throw new JobError("A run is already queued or running.", "already_active");
-    await this.repos.applications.update(userId, applicationId, { status: "queued", error: null });
+    if (opts.maxActivePerUser !== undefined && [...this.jobs.values()].filter((j) => j.userId === userId && (j.status === "queued" || j.status === "running")).length >= opts.maxActivePerUser) {
+      throw new JobError(`You already have ${opts.maxActivePerUser} runs in progress. Wait for one to finish.`, "user_limit");
+    }
     const now = this.now();
     const job: JobRecord = {
       id: crypto.randomUUID(),
@@ -45,6 +48,12 @@ export class MemoryJobQueue implements JobQueue {
       updatedAt: now,
     };
     this.jobs.set(job.id, job);
+    try {
+      await this.repos.applications.update(userId, applicationId, { status: "queued", error: null });
+    } catch (e) {
+      this.jobs.delete(job.id);
+      throw e;
+    }
     await this.log(job.id, "info", "Queued.");
     return { jobId: job.id };
   }
@@ -100,6 +109,11 @@ export class MemoryJobQueue implements JobQueue {
   async fail(jobId: string, workerId: string, error: string, opts: { retryable: boolean; backoffMs?: number }) {
     const j = this.owned(jobId, workerId);
     const msg = sanitizeLog(error);
+    if (j.cancelRequested) {
+      Object.assign(j, { status: "cancelled", lastError: msg, leaseExpiresAt: null, updatedAt: this.now() });
+      await this.repos.applications.update(j.userId, j.applicationId, { status: "cancelled" });
+      return { willRetry: false };
+    }
     const willRetry = opts.retryable && j.attempts < j.maxAttempts;
     if (willRetry) {
       Object.assign(j, { status: "queued", lastError: msg, leaseExpiresAt: null, workerId: null, runAfter: new Date(this.now().getTime() + (opts.backoffMs ?? 2000)), updatedAt: this.now() });

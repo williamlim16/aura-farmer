@@ -26,7 +26,7 @@ const unauth = () => err(401, "Please sign in.", "unauthenticated");
 
 export function repoErrorToResult(e: unknown): ApiResult {
   if (e instanceof JobError) {
-    const status = { not_found: 404, already_active: 409, lease_lost: 409 }[e.code];
+    const status = { not_found: 404, already_active: 409, lease_lost: 409, user_limit: 429 }[e.code];
     return err(status, e.message, e.code);
   }
   if (e instanceof RepoError) {
@@ -57,6 +57,7 @@ export async function ingestHandler(userId: string | null, file: unknown, deps: 
   if (!userId) return unauth();
   const result = await ingestResume({ userId, file, storage: deps.storage });
   if (!result.ok) return err(result.status, result.error, result.code);
+  let resumeId: string | null = null;
   try {
     const resume = await deps.repos.resumes.create(userId, {
       storageKey: result.resume.path,
@@ -64,6 +65,7 @@ export async function ingestHandler(userId: string | null, file: unknown, deps: 
       filename: result.resume.filename.slice(0, 255),
       sizeBytes: (await deps.storage.get(result.resume.path))?.byteLength ?? 0,
     });
+    resumeId = resume.id;
     const existing = await deps.repos.profiles.get(userId);
     const saved = await deps.repos.profiles.save(userId, mergeReparsed(result.profile, existing?.profile), { resumeId: resume.id });
     return {
@@ -71,8 +73,9 @@ export async function ingestHandler(userId: string | null, file: unknown, deps: 
       body: { success: true, path: resume.storageKey, resume: publicResume(resume), missing: result.missing, review: toReview(saved.profile), version: saved.version },
     };
   } catch (e) {
-    // Do not leave an orphaned object if the database write failed.
+    // Do not leave an orphaned object (or a row pointing at a deleted object) if a database write failed.
     await deps.storage.delete(result.resume.path).catch(() => undefined);
+    if (resumeId) await deps.repos.resumes.delete(userId, resumeId).catch(() => undefined);
     return repoErrorToResult(e);
   }
 }
@@ -154,13 +157,9 @@ export function publicApplication(a: ApplicationRecord, opts: { full?: boolean }
   };
 }
 
-/** Concurrent queued/running applications per user (cost and abuse control; enforced via the database). */
+/** Concurrent queued/running runs per user (cost and abuse control), enforced atomically by the queue. */
 export const MAX_ACTIVE_RUNS_PER_USER = 3;
-
-async function tooManyActive(userId: string, deps: ApiDeps) {
-  const recent = await deps.repos.applications.list(userId, { limit: 200 });
-  return recent.filter((a) => a.status === "queued" || a.status === "running").length >= MAX_ACTIVE_RUNS_PER_USER;
-}
+const RERUNNABLE = new Set(["draft", "ready_for_review", "failed", "cancelled"]);
 
 export const createApplicationSchema = z.object({ targetKey: z.string().max(100), useLlm: z.boolean().default(false), start: z.boolean().default(true) }).strict();
 
@@ -185,8 +184,12 @@ export async function createApplicationHandler(userId: string | null, body: unkn
     });
     if (parsed.data.start) {
       if (!deps.queue) return err(503, "The browser worker queue is not configured.", "no_queue");
-      if (await tooManyActive(userId, deps)) return { status: 429, body: { error: `You already have ${MAX_ACTIVE_RUNS_PER_USER} runs in progress. Wait for one to finish.`, code: "too_many_active", application: publicApplication(app, { full: true }) } };
-      await deps.queue.enqueue(userId, app.id);
+      try {
+        await deps.queue.enqueue(userId, app.id, { maxActivePerUser: MAX_ACTIVE_RUNS_PER_USER });
+      } catch (e) {
+        if (e instanceof JobError && e.code === "user_limit") return { status: 429, body: { error: e.message, code: "too_many_active", application: publicApplication(app, { full: true }) } };
+        throw e;
+      }
       app = (await deps.repos.applications.get(userId, app.id)) ?? app;
     }
     return { status: 201, body: { application: publicApplication(app, { full: true }) } };
@@ -233,11 +236,19 @@ export async function applicationActionHandler(userId: string | null, id: string
       }
       case "rerun": {
         if (!deps.queue) return err(503, "The browser worker queue is not configured.", "no_queue");
-        if (await tooManyActive(userId, deps)) return err(429, `You already have ${MAX_ACTIVE_RUNS_PER_USER} runs in progress. Wait for one to finish.`, "too_many_active");
+        // Never rewrite the snapshot of a running or submitted application.
+        if (!RERUNNABLE.has(app.status)) return err(409, "This application cannot be re-run in its current state.", "not_rerunnable");
+        const previous = { profileSnapshot: app.profileSnapshot, useLlm: app.useLlm };
         // Re-runs use the latest reviewed profile.
         const profile = await deps.repos.profiles.get(userId);
         if (profile) await deps.repos.applications.update(userId, id, { profileSnapshot: profile.profile, ...(parsed.data.useLlm !== undefined ? { useLlm: parsed.data.useLlm } : {}) });
-        await deps.queue.enqueue(userId, id);
+        try {
+          await deps.queue.enqueue(userId, id, { maxActivePerUser: MAX_ACTIVE_RUNS_PER_USER });
+        } catch (e) {
+          await deps.repos.applications.update(userId, id, previous).catch(() => undefined); // restore
+          if (e instanceof JobError && e.code === "user_limit") return err(429, e.message, "too_many_active");
+          throw e;
+        }
         break;
       }
     }

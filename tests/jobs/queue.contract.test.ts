@@ -129,3 +129,25 @@ describe.each(impls)("job queue: %s", (_n, make) => {
     expect(last.message.length).toBeLessThanOrEqual(500);
   });
 });
+
+describe.each(impls)("job queue regressions (security review): %s", (_n, make) => {
+  it("enforces the per-user active cap under concurrent enqueues", async () => {
+    const { repos, queue } = await make();
+    const apps = await Promise.all(Array.from({ length: 12 }, () => repos.applications.create(ALICE, { targetKey: "basic", targetUrl: "x", useLlm: false, profileSnapshot: syntheticProfile(), resumeId: null })));
+    const results = await Promise.allSettled(apps.map((a) => queue.enqueue(ALICE, a.id, { maxActivePerUser: 3 })));
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
+    expect(results.filter((r) => r.status === "rejected").every((r) => (r as PromiseRejectedResult).reason.code === "user_limit")).toBe(true);
+    const statuses = await Promise.all(apps.map((a) => repos.applications.get(ALICE, a.id).then((x) => x!.status)));
+    expect(statuses.filter((s) => s === "queued")).toHaveLength(3);
+  });
+
+  it("does not retry a job whose cancellation was requested", async () => {
+    const { repos, queue } = await make();
+    const a = await repos.applications.create(ALICE, { targetKey: "basic", targetUrl: "x", useLlm: false, profileSnapshot: syntheticProfile(), resumeId: null });
+    await queue.enqueue(ALICE, a.id, { maxAttempts: 3 });
+    const j = await queue.claim("w1", 10_000);
+    await queue.cancel(ALICE, a.id);
+    expect(await queue.fail(j!.id, "w1", "crash", { retryable: true })).toEqual({ willRetry: false });
+    expect((await repos.applications.get(ALICE, a.id))!.status).toBe("cancelled");
+  });
+});

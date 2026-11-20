@@ -94,3 +94,16 @@ describe("file upload restrictions", () => {
     }
   });
 });
+
+describe("hostile page (security review)", () => {
+  it("cannot redirect the Next click with a pre-planted marker attribute", async () => {
+    const { report, context, page } = await autofillFixture(browser, server, "spoof-next.html", { resumePath });
+    try {
+      expect(new URL(page.url()).pathname).toBe("/spoof-next.html"); // decoy link not followed
+      expect(report.steps[0]).toMatchObject({ step: 1, advanced: true });
+      expect(report.fields.find((f) => f.kind === "email")).toMatchObject({ step: 2, outcome: "verified" });
+    } finally {
+      await context.close();
+    }
+  });
+});

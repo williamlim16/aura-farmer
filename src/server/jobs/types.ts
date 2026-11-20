@@ -40,7 +40,7 @@ export interface JobLogEntry {
 export class JobError extends Error {
   constructor(
     message: string,
-    readonly code: "not_found" | "already_active" | "lease_lost",
+    readonly code: "not_found" | "already_active" | "lease_lost" | "user_limit",
   ) {
     super(message);
     this.name = "JobError";
@@ -49,7 +49,8 @@ export class JobError extends Error {
 
 export interface JobQueue {
   readonly driver: "memory" | "postgres";
-  enqueue(userId: string, applicationId: string, opts?: { maxAttempts?: number }): Promise<{ jobId: string }>;
+  /** `maxActivePerUser` is enforced atomically with the insert (no check-then-act race). */
+  enqueue(userId: string, applicationId: string, opts?: { maxAttempts?: number; maxActivePerUser?: number }): Promise<{ jobId: string }>;
   cancel(userId: string, applicationId: string): Promise<boolean>;
   claim(workerId: string, leaseMs: number): Promise<JobRecord | null>;
   /** Extends the lease. Throws lease_lost if another worker took over. */

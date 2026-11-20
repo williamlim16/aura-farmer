@@ -100,8 +100,10 @@ const SUBMITTISH_RE = /submit|apply|send|finish|complete (?:my )?application|rev
 /** A visible "Next"/"Continue" control that does not submit the form. */
 async function findNextControl(target: Target): Promise<{ selector: string; submits: boolean } | null> {
   await ensurePageShim(target);
+  // A per-call random marker, so a page cannot pre-plant the attribute to redirect our click.
+  const nonce = `af-next-${crypto.randomUUID()}`;
   return target.evaluate(
-    ({ next, submitish }) => {
+    ({ next, submitish, nonce }) => {
       const nextRe = new RegExp(next, "i");
       const subRe = new RegExp(submitish, "i");
       const els = Array.from(document.querySelectorAll<HTMLElement>("button, input[type=button], input[type=submit], [role=button], a[role=button]"));
@@ -113,12 +115,12 @@ async function findNextControl(target: Target): Promise<{ selector: string; subm
         const isButton = el.tagName === "BUTTON";
         const type = (el.getAttribute("type") ?? (isButton ? "submit" : "")).toLowerCase();
         const submits = (isButton && type === "submit" && !!el.closest("form")) || (el.tagName === "INPUT" && type === "submit");
-        el.setAttribute("data-af-next", "1");
-        return { selector: "[data-af-next='1']", submits };
+        el.setAttribute("data-af-next", nonce);
+        return { selector: `[data-af-next="${nonce}"]`, submits };
       }
       return null;
     },
-    { next: NEXT_RE.source, submitish: SUBMITTISH_RE.source },
+    { next: NEXT_RE.source, submitish: SUBMITTISH_RE.source, nonce },
   );
 }
 

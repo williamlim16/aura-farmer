@@ -39,11 +39,11 @@ export interface JevResult {
 }
 
 export interface JevClient {
-  /** `context.facts`: minimal candidate facts (no contact details) to decide against. */
+  /** `context.facts`: minimal candidate facts (location but no name, email, phone or links). */
   decide(requests: JevRequest[], context?: { facts: Record<string, unknown> }): Promise<unknown[] | JevResult>;
 }
 
-/** Minimal, non-identifying candidate facts for selection decisions. */
+/** Minimal candidate facts for selection decisions: location is included; name, email, phone and links are not. */
 export function candidateFacts(ctx: DecisionContext): Record<string, unknown> {
   const p = ctx.profile;
   return {

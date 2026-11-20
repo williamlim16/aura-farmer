@@ -149,3 +149,21 @@ describe("active run limit", () => {
     expect((await createApplicationHandler(BOB, { targetKey: "basic" }, deps)).status).toBe(409); // other users unaffected (no profile)
   });
 });
+
+describe("rerun safety (security review)", () => {
+  it("never rewrites the snapshot of a submitted application", async () => {
+    const repos = createMemoryRepos();
+    const queue = new MemoryJobQueue(repos);
+    const deps: ApiDeps = { repos, storage: new MemoryStorage(), queue };
+    await ingestHandler(ALICE, fileFrom(await makePdf(), "cv.pdf"), deps);
+    const app = ((await createApplicationHandler(ALICE, { targetKey: "basic" }, deps)).body as { application: { id: string } }).application;
+    const job = await queue.claim("w", 10_000);
+    await queue.complete(job!.id, "w", { stoppedBeforeSubmit: true, fields: [], steps: [], formLocation: "main", metrics: {}, blockedSubmits: { inPage: 0, network: 0 } } as never);
+    await applicationActionHandler(ALICE, app.id, { action: "mark_submitted" }, deps);
+    const before = (await repos.applications.get(ALICE, app.id))!.profileSnapshot;
+    const v = ((await getProfileHandler(ALICE, deps)).body as { version: number }).version;
+    await putProfileHandler(ALICE, { expectedVersion: v, summary: "Changed after submitting" }, deps);
+    expect((await applicationActionHandler(ALICE, app.id, { action: "rerun" }, deps)).status).toBe(409);
+    expect((await repos.applications.get(ALICE, app.id))!.profileSnapshot).toEqual(before);
+  });
+});

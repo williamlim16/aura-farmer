@@ -129,9 +129,10 @@ export class BrowserWorker {
       if (result.blockedEgress.length) await log("warn", `Blocked ${result.blockedEgress.length} request(s) to non-allowed origins.`);
       if (this.o.formHost.submissions() > 0) await log("error", "A submission reached the form host. This should never happen; please report it.");
 
-      await this.o.storage.put(screenshotKey(job.userId, job.applicationId), new Uint8Array(result.screenshotPng), "image/png").catch(() => log("warn", "Could not store the screenshot."));
       if (leaseLost) return;
-      await queue.complete(job.id, this.workerId, result.report);
+      await queue.complete(job.id, this.workerId, result.report); // throws lease_lost if another worker took over
+      // Only the worker that completed the job writes its screenshot.
+      await this.o.storage.put(screenshotKey(job.userId, job.applicationId), new Uint8Array(result.screenshotPng), "image/png").catch(() => log("warn", "Could not store the screenshot."));
       await log("info", "Ready for your review. Nothing was submitted.");
     } catch (e) {
       if (leaseLost) {
