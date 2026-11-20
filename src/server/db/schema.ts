@@ -24,3 +24,6 @@ export const posts = createTable(
   }),
   (t) => [index("name_idx").on(t.name)],
 );
+
+// Resume -> profile -> application workflow tables.
+export * from "./apply-schema";

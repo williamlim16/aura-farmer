@@ -37,7 +37,7 @@ import { demoMockLlm } from "./mock-llm";
 
 const DEMO_USER = "demo-user"; // synthetic, single local user
 const PUBLIC_DIR = path.resolve(import.meta.dirname, "public");
-const FORM_DIRS = [path.resolve(import.meta.dirname, "forms"), path.resolve(import.meta.dirname, "../tests/fixtures/forms")];
+const FORM_DIRS = [path.resolve(import.meta.dirname, "../test-forms")];
 
 export const DEMO_FORMS: { file: string; title: string; description: string }[] = [
   { file: "full-application.html", title: "Full application (Example Corp)", description: "Realistic single-page application: contact, links, resume, work rights, salary, EEO, essay, consent." },

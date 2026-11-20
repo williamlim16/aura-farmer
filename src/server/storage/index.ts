@@ -1,5 +1,8 @@
 import "server-only";
 
+import path from "node:path";
+
+import { FileStorage } from "./file";
 import { MemoryStorage } from "./memory";
 import { S3Storage } from "./s3";
 import { StorageError, type ObjectStorage } from "./types";
@@ -19,6 +22,7 @@ let memorySingleton: MemoryStorage | undefined;
 /**
  * STORAGE_DRIVER=memory (default outside production) keeps uploads in process,
  * so the upload flow can be developed without Supabase credentials.
+ * STORAGE_DRIVER=file (dev only) shares uploads with a separate worker process.
  * STORAGE_DRIVER=s3 uses the Supabase S3-compatible endpoint.
  */
 export function getStorage(env: NodeJS.ProcessEnv = process.env): ObjectStorage {
@@ -28,6 +32,12 @@ export function getStorage(env: NodeJS.ProcessEnv = process.env): ObjectStorage 
       throw new StorageError("Memory storage is not allowed in production.", "config");
     }
     return (memorySingleton ??= new MemoryStorage());
+  }
+  if (driver === "file") {
+    if (env.NODE_ENV === "production") {
+      throw new StorageError("File storage is not allowed in production.", "config");
+    }
+    return new FileStorage(path.resolve(env.FILE_STORAGE_DIR ?? ".data/storage"));
   }
   if (driver !== "s3") throw new StorageError(`Unknown STORAGE_DRIVER "${driver}".`, "config");
   const missing = REQUIRED_S3_VARS.filter((k) => !env[k]?.trim());

@@ -46,3 +46,5 @@ yarn-error.log*
 .idea
 # local benchmark output
 /bench-results
+# local dev data (file storage, dev database)
+/.data

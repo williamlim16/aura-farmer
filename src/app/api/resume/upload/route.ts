@@ -1,39 +1,20 @@
-import { NextResponse } from "next/server";
-
-import { createClient } from "~/lib/supabase/server";
-import { handleResumeUpload } from "~/server/resume/upload";
-import { getStorage, StorageError } from "~/server/storage";
+import { ingestHandler } from "~/server/api/handlers";
+import { apiDeps, currentUserId, errorResponse, guarded, respond, sameOrigin } from "~/server/api/next";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
-  // Auth: the Supabase session cookie identifies the user; the storage key is
-  // scoped to their id. (Middleware already redirects anonymous page requests.)
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  const userId = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
-
-  let file: FormDataEntryValue | null = null;
+/** Upload a resume, extract text, parse and save the candidate profile. */
+export const POST = guarded(async (request: Request) => {
+  if (!sameOrigin(request)) return errorResponse(403, "Cross-origin request refused.", "bad_origin");
+  const userId = await currentUserId();
+  if (!userId) return errorResponse(401, "Please sign in.", "unauthenticated");
+  const len = Number(request.headers.get("content-length") ?? 0);
+  if (len > 6 * 1024 * 1024) return errorResponse(413, "File must be smaller than 5 MB.", "too_large");
+  let file: FormDataEntryValue | null;
   try {
     file = (await request.formData()).get("resume");
   } catch {
-    return NextResponse.json(
-      { success: false, error: "Expected multipart form data.", code: "bad_request" },
-      { status: 400 },
-    );
+    return errorResponse(400, "Expected multipart form data.", "bad_request");
   }
-
-  let storage;
-  try {
-    storage = getStorage();
-  } catch (err) {
-    console.error("[resume-upload] storage config:", err instanceof StorageError ? err.message : err);
-    return NextResponse.json(
-      { success: false, error: "Upload is not configured.", code: "storage_config" },
-      { status: 500 },
-    );
-  }
-
-  const result = await handleResumeUpload({ userId, file, storage });
-  return NextResponse.json(result.body, { status: result.status });
-}
+  return respond(await ingestHandler(userId, file, await apiDeps()));
+});

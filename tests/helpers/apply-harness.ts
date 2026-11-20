@@ -20,7 +20,7 @@ import { installSubmitGuard } from "~/server/apply/submit-guard";
 import { runAutofill } from "~/server/apply/run";
 import { SAMPLE_RESUME_LINES, makePdf } from "./resume-fixtures";
 
-export const FORMS_DIR = path.resolve(import.meta.dirname, "../fixtures/forms");
+export const FORMS_DIR = path.resolve(import.meta.dirname, "../../test-forms");
 
 export interface FixtureServer {
   url: string;
