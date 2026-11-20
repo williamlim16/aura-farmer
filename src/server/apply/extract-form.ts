@@ -16,8 +16,10 @@ export async function extractForm(target: Page | Frame): Promise<FormField[]> {
     const clean = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").replace(/\s*[*✱]\s*$/, "").trim();
     const visible = (el: Element) => {
       const he = el as HTMLElement;
-      // File inputs are often display:none behind a styled "Upload" button; keep them.
-      if ((he as HTMLInputElement).type === "file") return true;
+      // File inputs are often display:none behind a styled "Upload" button: the
+      // input itself may be hidden, but its container must be rendered (a file
+      // input in a hidden form step is not on screen yet).
+      if ((he as HTMLInputElement).type === "file") return !he.parentElement?.closest("[hidden]") && (he.parentElement?.getClientRects().length ?? 0) > 0;
       if (he.closest("[hidden],[aria-hidden='true']")) return false;
       const st = getComputedStyle(he);
       if (st.display === "none" || st.visibility === "hidden") return false;
