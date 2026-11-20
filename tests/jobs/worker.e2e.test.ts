@@ -81,7 +81,8 @@ describe("BrowserWorker", () => {
     await setupUser(ALICE);
     const id = await createApp(ALICE, "dynamic"); // multi-round, takes ~1s
     const run = worker().runOnce();
-    await new Promise((r) => setTimeout(r, 250));
+    for (let i = 0; i < 100 && (await app(ALICE, id))!.status !== "running"; i++) await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 150));
     expect(await deps.queue.cancel(ALICE, id)).toBe(true);
     await run;
     expect((await app(ALICE, id))!.status).toBe("cancelled");

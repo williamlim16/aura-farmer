@@ -25,6 +25,7 @@ export type FieldKind =
   | "phone"
   | "location"
   | "country"
+  | "education_level"
   | "linkedin"
   | "github"
   | "website"

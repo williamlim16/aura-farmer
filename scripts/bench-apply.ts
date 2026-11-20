@@ -53,6 +53,20 @@ const FORMS: { file: string; expect: Expect }[] = [
   { file: "dynamic.html", expect: { "^Email": "avery.quinn@example.com", "How did you hear": "LinkedIn", "^Phone": "+61400555123" } },
   { file: "iframe.html", expect: { "^First name": "Avery", "^Email": "avery.quinn@example.com" } },
   { file: "trap.html", expect: { "^First name": "Avery", "^Email": "avery.quinn@example.com" } },
+  { file: "greenhouse-like.html", expect: { "^First Name": "Avery", "legally authorized": "Yes", sponsorship: "No", "How did you hear": "LinkedIn", "^Gender": "human" } },
+  { file: "lever-like.html", expect: { "^Full name": "Avery Quinn", "^Current company": "Northwind Labs", "right to work": "Yes", "Which office": "human" } },
+  { file: "ashby-like.html", expect: { "^Name$": "Avery Quinn", "authorized to work": "Yes", "visa sponsorship": "No" } },
+  {
+    file: "jev-ambiguous.html",
+    expect: {
+      "Highest level of education": "Bachelor's degree",
+      "cloud platform": "AWS",
+      "primary engineering focus": "Frontend / full-stack web",
+      "automated testing": "Built test frameworks or suites",
+      "Which team": "human",
+      "work arrangement": "human",
+    },
+  },
 ];
 
 /** MOCK LLM: answers only what a profile-grounded model plausibly could. */
@@ -65,16 +79,22 @@ const mockLlm = () =>
     }),
   );
 
-/** MOCK Jev: selects an option only when a candidate fact names it exactly. */
-const mockJev = (): JevClient => ({
-  decide: async (reqs, context) => {
-    const facts = JSON.stringify(context?.facts ?? {}).toLowerCase();
+/**
+ * ORACLE MOCK Jev (upper bound, NOT a model): answers bounded-choice fields
+ * with the benchmark's expected answer when one exists, abstains otherwise.
+ * It measures how much a perfect constrained-choice tier could take off the
+ * LLM / the person, and what that costs in calls. It says nothing about real
+ * Jev accuracy.
+ */
+const oracleJev = (): JevClient => ({
+  decide: async (reqs) => {
+    const truth = Object.assign({}, ...FORMS.map((f) => f.expect)) as Expect;
     return {
       responses: reqs.map((r) => {
-        const i = r.options.findIndex((o) => o.length > 2 && facts.includes(o.toLowerCase()));
-        return { fieldId: r.fieldId, choice: i, confidence: i >= 0 ? 0.9 : 0 };
+        const hit = Object.entries(truth).find(([re]) => new RegExp(re, "i").test(r.label));
+        const i = hit && hit[1] !== "human" ? r.options.indexOf(hit[1]) : -1;
+        return { fieldId: r.fieldId, choice: i, confidence: i >= 0 ? 0.95 : 0 };
       }),
-      usage: { inputTokens: 300 * reqs.length, outputTokens: 2 * reqs.length },
     };
   },
 });
@@ -82,7 +102,7 @@ const mockJev = (): JevClient => ({
 const CONFIGS: Record<string, () => DecisionProvider[]> = {
   "A rules": () => [new RuleProvider()],
   "B rules+LLM(mock)": () => [new RuleProvider(), new LlmProvider(mockLlm())],
-  "C rules+Jev(mock)+LLM(mock)": () => [new RuleProvider(), new JevProvider(mockJev()), new LlmProvider(mockLlm())],
+  "C rules+Jev(ORACLE upper bound)+LLM(mock)": () => [new RuleProvider(), new JevProvider(oracleJev()), new LlmProvider(mockLlm())],
 };
 
 function score(fields: FieldReport[], expect: Expect) {
@@ -107,12 +127,12 @@ async function main() {
   const profile = syntheticProfile();
   profile.contact.phone = { value: "+61400555123", source: "user", confidence: 1 }; // digits-only so multi-step validation passes
   const rows: Record<string, string | number>[] = [];
-  type Totals = { correct: number; total: number; calls: number; fields: number; human: number; fallback: number; failures: number; actions: number; ms: number[] };
+  type Totals = { correct: number; total: number; calls: number; fields: number; human: number; fallback: number; failures: number; actions: number; ms: number[]; jev: number };
   const totals: Record<string, Totals> = {};
   const misses: Record<string, string[]> = {};
   try {
     for (const [name, providers] of Object.entries(CONFIGS)) {
-      const t: Totals = { correct: 0, total: 0, calls: 0, fields: 0, human: 0, fallback: 0, failures: 0, actions: 0, ms: [] };
+      const t: Totals = { correct: 0, total: 0, calls: 0, fields: 0, human: 0, fallback: 0, failures: 0, actions: 0, ms: [], jev: 0 };
       totals[name] = t;
       for (const form of FORMS) {
         const durations: number[] = [];
@@ -134,6 +154,7 @@ async function main() {
         t.fields += m.fields;
         t.human += m.needsHuman;
         t.fallback += jev + llmDecided;
+        t.jev += jev;
         t.failures += m.errors + m.mismatches;
         t.actions += m.browserActions;
         t.ms.push(med);
@@ -170,6 +191,7 @@ async function main() {
     llmCalls: t.calls,
     browserActions: t.actions,
     totalMedianMs: Math.round(t.ms.reduce((a, b) => a + b, 0)),
+    byJev: t.jev,
   }));
   console.table(summary);
   if (Object.keys(misses).length) console.log("Accuracy misses:", misses);
@@ -177,7 +199,7 @@ async function main() {
   const outDir = path.resolve(import.meta.dirname, "../bench-results");
   fs.mkdirSync(outDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const note = "LLM and Jev tiers are scripted MOCKS (no network). Call counts are real; tokens/cost are not measured. Durations are local headless Chromium on synthetic forms, excluding any real model latency.";
+  const note = "LLM tier is a scripted MOCK and the Jev tier is an ORACLE MOCK (upper bound: it knows the expected answers). No network. Call counts are real; tokens/cost are not measured. Durations are local headless Chromium on synthetic forms, excluding any real model latency. Config C shows the opportunity for a constrained-choice tier, not real Jev accuracy.";
   fs.writeFileSync(path.join(outDir, `apply-${stamp}.json`), JSON.stringify({ note, rows, summary, misses }, null, 2));
   console.log(`\n${note}\nSaved bench-results/apply-${stamp}.json`);
   if (rows.some((r) => r.posted !== 0)) {

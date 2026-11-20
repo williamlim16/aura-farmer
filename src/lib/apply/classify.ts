@@ -52,6 +52,7 @@ const LABEL_RULES: Rule[] = [
   ["phone", /phone|mobile|cell|telephone|contact number/],
   ["current_company", /current (?:company|employer)|most recent (?:company|employer)|^(?:company|employer)$/],
   ["current_title", /current (?:job )?(?:title|role|position)|^(?:job )?title$/],
+  ["education_level", /highest (?:level of )?(?:education|degree)|education level|level of education/],
   ["country", /\bcountry\b(?! code)/],
   ["location", /\b(?:location|city|where are you (?:based|located)|current address|suburb)\b/],
   ["essay", /why (?:do you|are you|us\b|this|join|our)|tell us|describe|cover note|additional information|anything else|what (?:excites|interests|motivates)/],

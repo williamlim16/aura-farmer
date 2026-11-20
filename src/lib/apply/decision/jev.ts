@@ -50,6 +50,7 @@ export function candidateFacts(ctx: DecisionContext): Record<string, unknown> {
     location: p.contact.location?.value,
     totalYearsExperience: p.totalYearsExperience?.value,
     currentTitle: p.experience[0]?.title,
+    highlights: p.experience.slice(0, 2).flatMap((e) => e.bullets.slice(0, 3)),
     skills: p.skills.slice(0, 30),
     preferences: {
       workAuthorization: p.preferences.workAuthorization,

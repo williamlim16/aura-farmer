@@ -3,6 +3,7 @@
  * Never guesses: if the profile does not state the fact, it abstains (or, for
  * sensitive kinds, hands the field to the person).
  */
+import { skillsIn } from "~/lib/match/match";
 import type { CandidateProfile } from "~/lib/profile/schema";
 import { pickOption, pickYesNo } from "../option-match";
 import type { Decision, FieldKind, FormField } from "../types";
@@ -107,6 +108,13 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
       const country = loc?.value.split(",").pop()?.trim();
       return country ? fitToField(field, country, Math.min(loc!.confidence, 0.8)) : null;
     }
+    case "education_level": {
+      const level = (s: string) => (/doctor|phd|ph\.d/i.test(s) ? 4 : /master|msc|mba/i.test(s) ? 3 : /bachelor|bsc|b\.s|undergrad/i.test(s) ? 2 : /associate/i.test(s) ? 1 : /high school|secondary/i.test(s) ? 0 : -1);
+      const best = Math.max(-1, ...p.education.map((e) => level(e.degree)));
+      if (best < 0) return human("Education level is not in your profile.");
+      const i = field.options.findIndex((o) => level(o) === best);
+      return i >= 0 ? fill(field.options[i]!, 0.9) : null;
+    }
     case "referral_source":
       return prefs.referralSource ? fitToField(field, prefs.referralSource, 1) : null;
     case "years_experience": {
@@ -129,6 +137,12 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
       return fill(String(y.value), y.confidence);
     }
     default: {
+      // "Which X have you used most?": exactly one option is a stated skill.
+      if (cls.kind === "unknown" && field.options.length && /\b(used|use|experience with|familiar|worked with|work with|primary|main|most)\b/i.test(field.label) && !/\b(not|never|least|don'?t|haven'?t)\b/i.test(field.label)) {
+        const mine = new Set(skillsIn(p.skills.join(", ")));
+        const hits = field.options.map((o, i) => ({ o, i, k: skillsIn(o).filter((s) => mine.has(s)) })).filter((x) => x.k.length);
+        if (hits.length === 1) return fill(hits[0]!.o, 0.8);
+      }
       const v = contactValue(p, cls.kind);
       // Contact facts are never inferred: if the profile lacks one, no model can supply it.
       if (!v && CONTACT_KINDS.has(cls.kind)) return human("Not in your profile. Add it on your profile page or fill it in yourself.");

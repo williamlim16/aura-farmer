@@ -78,6 +78,7 @@ export async function runApplication(input: RunApplicationInput): Promise<RunApp
     const ctx = context;
     const onAbort = () => void ctx.close().catch(() => undefined);
     input.signal?.addEventListener("abort", onAbort, { once: true });
+    if (input.signal?.aborted) onAbort(); // aborted between the entry check and listener registration
     const blockedEgress: string[] = [];
     // Egress allowlist first, then the submit guard (its route is checked first by Playwright: last registered wins).
     await context.route("**/*", async (route) => {
