@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import type { ProfileReview, ReviewContactField } from "~/lib/profile/review";
+import { apiFetch } from "~/lib/client/api";
 import { RESUME_ERROR_MESSAGES, validateResumeMeta } from "~/lib/resume/validate";
 
 const CONTACT_LABELS: Record<keyof ProfileReview["contact"], string> = {
@@ -68,10 +69,10 @@ export function ProfileEditor({ initial }: Props) {
     try {
       const fd = new FormData();
       fd.append("resume", file);
-      const res = await fetch("/api/resume/upload", { method: "POST", body: fd });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; review?: ProfileReview; version?: number; missing?: string[]; resume?: { filename: string; createdAt: string } };
-      if (!res.ok || !body.review) throw new Error(body.error ?? (res.status === 401 ? "Your session expired. Please sign in again." : "Upload failed."));
-      setData({ review: body.review, version: body.version!, resume: body.resume ?? null });
+      const r = await apiFetch<{ review: ProfileReview; version: number; missing?: string[]; resume?: { filename: string; createdAt: string } }>("/api/resume/upload", { method: "POST", body: fd });
+      if (!r.ok) throw new Error(r.error);
+      const body = r.data;
+      setData({ review: body.review, version: body.version, resume: body.resume ?? null });
       setMissing(body.missing ?? []);
       setStatus("Resume processed. Review the details below.");
       if (fileRef.current) fileRef.current.value = "";
@@ -105,19 +106,18 @@ export function ProfileEditor({ initial }: Props) {
     setErrors({});
     setStatus("");
     try {
-      const res = await fetch("/api/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; errors?: Record<string, string>; review?: ProfileReview; version?: number };
-      if (res.status === 422 && body.errors) {
-        setErrors(body.errors);
+      const r = await apiFetch<{ review: ProfileReview; version: number }>("/api/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      if (!r.ok && r.status === 422 && r.data.errors) {
+        setErrors(r.data.errors as Record<string, string>);
         setStatus("Please fix the highlighted fields.");
         return;
       }
-      if (res.status === 409 && body.code === "conflict") {
+      if (!r.ok && r.code === "conflict") {
         setStatus("This profile was changed in another tab. Reload the page to get the latest version.");
         return;
       }
-      if (!res.ok || !body.review) throw new Error(body.error ?? "Could not save.");
-      setData({ ...data, review: body.review, version: body.version! });
+      if (!r.ok) throw new Error(r.error);
+      setData({ ...data, review: r.data.review, version: r.data.version });
       setStatus("Saved.");
       router.refresh();
     } catch (err) {

@@ -136,3 +136,16 @@ describe("FileStorage", () => {
     }
   });
 });
+
+describe("active run limit", () => {
+  it("caps queued/running applications per user, keeping the draft", async () => {
+    const repos = createMemoryRepos();
+    const deps: ApiDeps = { repos, storage: new MemoryStorage(), queue: new MemoryJobQueue(repos) };
+    await ingestHandler(ALICE, fileFrom(await makePdf(), "cv.pdf"), deps);
+    for (let i = 0; i < 3; i++) expect((await createApplicationHandler(ALICE, { targetKey: "basic" }, deps)).status).toBe(201);
+    const fourth = await createApplicationHandler(ALICE, { targetKey: "basic" }, deps);
+    expect(fourth.status).toBe(429);
+    expect((fourth.body as { application: { status: string } }).application.status).toBe("draft"); // prepared, not lost
+    expect((await createApplicationHandler(BOB, { targetKey: "basic" }, deps)).status).toBe(409); // other users unaffected (no profile)
+  });
+});

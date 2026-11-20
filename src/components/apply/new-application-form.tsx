@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { APPLICATION_TARGETS, checkJobUrl } from "~/lib/applications/targets";
+import { apiFetch } from "~/lib/client/api";
 
 export function NewApplicationForm({ llm }: { llm: { available: boolean; label: string } }) {
   const router = useRouter();
@@ -23,10 +24,9 @@ export function NewApplicationForm({ llm }: { llm: { available: boolean; label: 
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/applications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targetKey, useLlm: llm.available && useLlm, start }) });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; application?: { id: string } };
-      if (!res.ok || !body.application) throw new Error(body.error ?? (res.status === 401 ? "Your session expired. Please sign in again." : "Could not create the application."));
-      router.push(`/apply/applications/${body.application.id}`);
+      const r = await apiFetch<{ application: { id: string } }>("/api/applications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targetKey, useLlm: llm.available && useLlm, start }) });
+      if (!r.ok) throw new Error(r.error);
+      router.push(`/apply/applications/${r.data.application.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the application.");
       setBusy(false);

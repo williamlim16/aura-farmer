@@ -154,6 +154,14 @@ export function publicApplication(a: ApplicationRecord, opts: { full?: boolean }
   };
 }
 
+/** Concurrent queued/running applications per user (cost and abuse control; enforced via the database). */
+export const MAX_ACTIVE_RUNS_PER_USER = 3;
+
+async function tooManyActive(userId: string, deps: ApiDeps) {
+  const recent = await deps.repos.applications.list(userId, { limit: 200 });
+  return recent.filter((a) => a.status === "queued" || a.status === "running").length >= MAX_ACTIVE_RUNS_PER_USER;
+}
+
 export const createApplicationSchema = z.object({ targetKey: z.string().max(100), useLlm: z.boolean().default(false), start: z.boolean().default(true) }).strict();
 
 export async function createApplicationHandler(userId: string | null, body: unknown, deps: ApiDeps): Promise<ApiResult> {
@@ -177,6 +185,7 @@ export async function createApplicationHandler(userId: string | null, body: unkn
     });
     if (parsed.data.start) {
       if (!deps.queue) return err(503, "The browser worker queue is not configured.", "no_queue");
+      if (await tooManyActive(userId, deps)) return { status: 429, body: { error: `You already have ${MAX_ACTIVE_RUNS_PER_USER} runs in progress. Wait for one to finish.`, code: "too_many_active", application: publicApplication(app, { full: true }) } };
       await deps.queue.enqueue(userId, app.id);
       app = (await deps.repos.applications.get(userId, app.id)) ?? app;
     }
@@ -224,6 +233,7 @@ export async function applicationActionHandler(userId: string | null, id: string
       }
       case "rerun": {
         if (!deps.queue) return err(503, "The browser worker queue is not configured.", "no_queue");
+        if (await tooManyActive(userId, deps)) return err(429, `You already have ${MAX_ACTIVE_RUNS_PER_USER} runs in progress. Wait for one to finish.`, "too_many_active");
         // Re-runs use the latest reviewed profile.
         const profile = await deps.repos.profiles.get(userId);
         if (profile) await deps.repos.applications.update(userId, id, { profileSnapshot: profile.profile, ...(parsed.data.useLlm !== undefined ? { useLlm: parsed.data.useLlm } : {}) });

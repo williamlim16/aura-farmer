@@ -193,6 +193,17 @@ describe("team Next.js app: integrated apply workflow", () => {
     await ctx.close();
   }, 120_000);
 
+  it("shows a clear session-expired message when the session ends mid-task", async () => {
+    const ctx = await signedIn(0);
+    const page = await ctx.newPage();
+    await page.goto("/apply/profile", { timeout: 60_000 });
+    await page.getByRole("button", { name: "Save profile" }).waitFor({ timeout: 60_000 });
+    await ctx.clearCookies(); // session expires while the page is open
+    await page.getByRole("button", { name: "Save profile" }).click();
+    await page.getByRole("status").filter({ hasText: "Your session expired. Please sign in again." }).waitFor({ timeout: 30_000 });
+    await ctx.close();
+  }, 120_000);
+
   it("documents the middleware behaviour for anonymous API calls", async () => {
     // Known team-middleware behaviour: anonymous /api requests are redirected to
     // the login page rather than receiving our JSON 401. The UI treats a

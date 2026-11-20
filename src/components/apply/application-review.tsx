@@ -6,6 +6,7 @@ import { Badge, type BadgeTone } from "~/components/apply/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import type { ApplicationStatus } from "~/lib/applications/status";
+import { apiFetch, SESSION_EXPIRED } from "~/lib/client/api";
 import { displayValue, GROUP_LABEL, groupFields, STAGES, statusView, TIER_LABEL, type FieldGroup, type ReportFieldLike } from "~/lib/applications/view";
 
 export interface ApplicationDTO {
@@ -44,14 +45,13 @@ export function ApplicationReview({ initial }: { initial: ApplicationDTO }) {
   const view = statusView(app.status);
 
   const refresh = useCallback(async () => {
-    const [a, l] = await Promise.all([fetch(`/api/applications/${app.id}`), fetch(`/api/applications/${app.id}/logs`)]);
-    if (a.status === 401) return setMessage("Your session expired. Please sign in again.");
+    const [a, l] = await Promise.all([apiFetch<{ application: ApplicationDTO }>(`/api/applications/${app.id}`), apiFetch<LogsDTO>(`/api/applications/${app.id}/logs`)]);
+    if (!a.ok && a.status === 401) return setMessage(SESSION_EXPIRED);
     if (a.ok) {
-      const body = (await a.json()) as { application: ApplicationDTO };
-      setApp(body.application);
-      setShotVersion(body.application.updatedAt);
+      setApp(a.data.application);
+      setShotVersion(a.data.application.updatedAt);
     }
-    if (l.ok) setLogs((await l.json()) as LogsDTO);
+    if (l.ok) setLogs(l.data);
   }, [app.id]);
 
   useEffect(() => {
@@ -78,10 +78,9 @@ export function ApplicationReview({ initial }: { initial: ApplicationDTO }) {
     setBusy(true);
     setMessage("");
     try {
-      const res = await fetch(`/api/applications/${app.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; application?: ApplicationDTO };
-      if (!res.ok || !body.application) throw new Error(body.error ?? "Action failed.");
-      setApp(body.application);
+      const r = await apiFetch<{ application: ApplicationDTO }>(`/api/applications/${app.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
+      if (!r.ok) throw new Error(r.error);
+      setApp(r.data.application);
       await refresh();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Action failed.");
@@ -151,7 +150,11 @@ export function ApplicationReview({ initial }: { initial: ApplicationDTO }) {
               </div>
             </div>
           )}
-          {message && <p role="alert" className="text-destructive text-sm">{message}</p>}
+          {message && (
+            <p role="alert" className="text-destructive text-sm">
+              {message} {message === SESSION_EXPIRED && <a href="/auth/login" className="underline">Sign in</a>}
+            </p>
+          )}
         </CardContent>
       </Card>
 
