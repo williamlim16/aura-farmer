@@ -26,6 +26,11 @@ export async function readBack(page: Page | Frame, ids: string[]): Promise<Map<s
       return msg || "The form marked this field as invalid.";
     };
     return ids.map((id) => {
+      const ariaRadios = Array.from(document.querySelectorAll<HTMLElement>(`[data-af-aria-radio="${id}"]`));
+      if (ariaRadios.length) {
+        const on = ariaRadios.find((r) => r.getAttribute("aria-checked") === "true");
+        return { id, value: on ? (on.textContent ?? "").replace(/\s+/g, " ").trim() : null, hasFile: false };
+      }
       const group = Array.from(document.querySelectorAll<HTMLInputElement>(`[data-af-group="${id}"]`));
       if (group.length) {
         const checked = group.filter((g) => g.checked).map(labelOf);

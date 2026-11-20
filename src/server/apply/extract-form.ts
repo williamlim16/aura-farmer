@@ -13,9 +13,11 @@ export async function extractForm(target: Page | Frame): Promise<FormField[]> {
   await ensurePageShim(target);
   return target.evaluate(() => {
     const SKIP_TYPES = new Set(["hidden", "submit", "button", "image", "reset", "password", "search"]);
-    const clean = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").replace(/\s*\*\s*$/, "").trim();
+    const clean = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").replace(/\s*[*✱]\s*$/, "").trim();
     const visible = (el: Element) => {
       const he = el as HTMLElement;
+      // File inputs are often display:none behind a styled "Upload" button; keep them.
+      if ((he as HTMLInputElement).type === "file") return true;
       if (he.closest("[hidden],[aria-hidden='true']")) return false;
       const st = getComputedStyle(he);
       if (st.display === "none" || st.visibility === "hidden") return false;
@@ -173,6 +175,18 @@ export async function extractForm(target: Page | Frame): Promise<FormField[]> {
       const ea = firstEl(a), eb = firstEl(b);
       if (!ea || !eb || ea === eb) return 0;
       return ea.compareDocumentPosition(eb) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
+    // ARIA radio groups made of buttons (e.g. Ashby yes/no toggles).
+    document.querySelectorAll<HTMLElement>("[role=radiogroup]").forEach((g) => {
+      if (g.querySelector("input[type=radio]")) return; // native radios already handled above
+      const radios = Array.from(g.querySelectorAll<HTMLElement>("[role=radio]")).filter((r) => r.tagName !== "INPUT" && visible(r));
+      if (!radios.length) return;
+      const lb = g.getAttribute("aria-labelledby");
+      const label = lb ? lb.split(/\s+/).map((i) => textOf(document.getElementById(i))).join(" ").trim() : clean(g.getAttribute("aria-label"));
+      const id = g.getAttribute("data-af-group") ?? stamp(g);
+      g.setAttribute("data-af-group", id);
+      radios.forEach((r) => r.setAttribute("data-af-aria-radio", id));
+      out.push({ id, control: "radio", label, labelSource: label ? "aria-labelledby" : "none", name: "", htmlId: g.id, placeholder: "", autocomplete: "", required: g.getAttribute("aria-required") === "true", options: radios.map((r) => clean(r.textContent)), multiple: false, accept: "" });
     });
     return out;
   });

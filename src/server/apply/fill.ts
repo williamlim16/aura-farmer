@@ -60,6 +60,14 @@ async function fillOne(page: Target, fd: FieldDecision, resumePath: string | nul
       return;
     }
     case "radio": {
+      const aria = page.locator(`[data-af-aria-radio="${field.id}"]`);
+      if ((await aria.count()) > 0) {
+        const texts = (await aria.allTextContents()).map((t) => t.replace(/\s+/g, " ").trim());
+        const i = pickOption(texts, String(value));
+        if (i < 0) throw new Error(`radio option "${String(value)}" not found`);
+        await aria.nth(i).click();
+        return;
+      }
       const target = await radioOrCheckboxByLabel(page, field.id, String(value));
       if (!target) throw new Error(`radio option "${String(value)}" not found`);
       await target.check();
