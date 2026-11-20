@@ -169,6 +169,59 @@ describe("team Next.js app: integrated apply workflow", () => {
     await ctx.close();
   }, 240_000);
 
+  it("full journey: job import -> match -> tailoring -> tailored resume -> prepared application -> autofill -> review -> handoff", async () => {
+    const ctx = await signedIn(0); // profile was created in the previous test
+    const page = await ctx.newPage();
+    await page.goto("/apply/jobs", { timeout: 90_000 });
+    await page.getByRole("tab", { name: "Paste description" }).click();
+    const form = page.getByRole("form", { name: "Paste job description" });
+    await form.getByLabel("Title").fill("Senior Frontend Engineer");
+    await form.getByLabel("Company").fill("Example Corp");
+    await form.getByLabel("Location").fill("Melbourne");
+    await form.getByLabel("Job description").fill("About the role\nYou will build our web platform.\nRequirements:\n- 5+ years of experience with TypeScript\n- Experience with React and Node.js\n- Authorized to work in Australia\n- Experience with Kubernetes\nNice to have:\n- Playwright testing");
+    await form.getByRole("button", { name: "Save job" }).click();
+    await page.waitForURL(/\/apply\/jobs\/[0-9a-f-]{36}$/, { timeout: 60_000 });
+
+    await page.getByRole("button", { name: "Check my match" }).click();
+    await page.getByText(/requirements are stated in your profile/).waitFor({ timeout: 60_000 });
+    expect(await page.getByText("Stated in your profile").count()).toBeGreaterThan(1);
+    await page.getByText("Not in your profile").first().waitFor(); // Kubernetes: never invented
+
+    await page.getByRole("button", { name: "Suggest tailoring" }).click();
+    const decisions = page.getByRole("form", { name: "Tailoring decisions" });
+    await decisions.waitFor({ timeout: 60_000 });
+    for (const r of await decisions.getByLabel("Accept").all()) await r.check();
+    await decisions.getByLabel("Answer: Why are you interested in Example Corp?").fill("I want to build Example Corp's web platform with TypeScript and React.");
+    await decisions.getByLabel("Use this answer").first().check();
+    await decisions.getByRole("button", { name: "Save decisions" }).click();
+    await page.getByRole("button", { name: "Generate tailored resume (PDF)" }).click();
+    const dl = page.getByRole("link", { name: "Download tailored resume" });
+    await dl.waitFor({ timeout: 60_000 });
+    const pdf = await ctx.request.get(await dl.getAttribute("href") ?? "");
+    expect(pdf.headers()["content-type"]).toBe("application/pdf");
+
+    await page.getByLabel("Test form to fill").selectOption("full-application");
+    await page.getByRole("button", { name: "Prepare and start autofill" }).click();
+    await page.waitForURL(/\/apply\/applications\//, { timeout: 60_000 });
+    await page.getByText("Filled, awaiting your review").first().waitFor({ timeout: 90_000 });
+    // The approved draft answer was used (filled by rules, flagged for review), and the tailored resume uploaded.
+    await page.getByText("I want to build Example Corp's web platform with TypeScript and React.").first().waitFor();
+    await page.getByRole("cell", { name: /Resume\/CV/ }).first().waitFor();
+
+    const id = new URL(page.url()).pathname.split("/").pop()!;
+    const plan = await ctx.request.get(`/api/applications/${id}/fill-plan`);
+    expect(plan.status()).toBe(200);
+    const body = (await plan.json()) as { plan: { fields: { label: string }[]; resume: { filename: string } | null } };
+    expect(body.plan.resume?.filename).toMatch(/tailored\.pdf$/);
+    expect(body.plan.fields.some((f) => /Gender/.test(f.label))).toBe(false);
+    await page.getByRole("button", { name: "Send to browser extension" }).click();
+    await page.getByText(/extension was not detected|Sent \d+ answers/).waitFor({ timeout: 10_000 }); // no extension in this test browser
+
+    await page.goto("/apply/jobs");
+    await page.getByText("Senior Frontend Engineer").waitFor();
+    await ctx.close();
+  }, 300_000);
+
   it("another user cannot see or act on the application", async () => {
     const ctx = await signedIn(1);
     const page = await ctx.newPage();
