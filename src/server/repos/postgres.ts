@@ -10,7 +10,8 @@ import { canTransition, type ApplicationStatus } from "~/lib/applications/status
 import { candidateProfileSchema, type CandidateProfile } from "~/lib/profile/schema";
 import type { ResumeKind } from "~/lib/resume/validate";
 import type { PostingDraft, PostingSource } from "~/lib/postings/types";
-import { applications, candidateProfiles, jobPostings, resumes } from "~/server/db/apply-schema";
+import { applications, candidateProfiles, jobPostings } from "~/server/db/apply-schema";
+import { resumes } from "~/server/db/schema";
 import {
   RepoError,
   type ApplicationPatch,
@@ -33,8 +34,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Non-UUID ids can never match; avoid a Postgres cast error and treat as missing. */
 const validId = (id: string) => UUID_RE.test(id);
 
+const MIME: Record<ResumeKind, string> = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+
+/** Maps the team's resume table (file_name, storage_path, mime_type, file_size) to ResumeRecord. */
 function toResume(r: typeof resumes.$inferSelect): ResumeRecord {
-  return { ...r, kind: r.kind as ResumeKind };
+  const kind: ResumeKind = r.mimeType.includes("pdf") || r.fileName.toLowerCase().endsWith(".pdf") ? "pdf" : "docx";
+  return { id: r.id, userId: r.userId, storageKey: r.storagePath, kind, filename: r.fileName, sizeBytes: r.fileSize, createdAt: r.createdAt };
 }
 
 function toApplication(r: typeof applications.$inferSelect): ApplicationRecord {
@@ -49,7 +54,7 @@ function parseProfile(p: unknown): CandidateProfile {
 class PgResumeRepo implements ResumeRepo {
   constructor(private db: Db) {}
   async create(userId: string, input: Omit<ResumeRecord, "id" | "userId" | "createdAt">) {
-    const [row] = await this.db.insert(resumes).values({ ...input, userId }).returning();
+    const [row] = await this.db.insert(resumes).values({ userId, storagePath: input.storageKey, fileName: input.filename, mimeType: MIME[input.kind], fileSize: input.sizeBytes }).returning();
     return toResume(row!);
   }
   async get(userId: string, id: string) {

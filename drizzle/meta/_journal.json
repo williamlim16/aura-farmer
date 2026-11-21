@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1795187868993,
-      "tag": "0000_apply_workflow",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1795208758703,
-      "tag": "0001_job_postings",
+      "when": 1795219704156,
+      "tag": "0000_baseline",
       "breakpoints": true
     }
   ]

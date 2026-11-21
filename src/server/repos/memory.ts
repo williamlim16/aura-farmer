@@ -27,7 +27,6 @@ const clone = <T>(v: T): T => structuredClone(v);
 class MemoryResumeRepo implements ResumeRepo {
   private rows = new Map<string, ResumeRecord>();
   async create(userId: string, input: Omit<ResumeRecord, "id" | "userId" | "createdAt">) {
-    if ([...this.rows.values()].some((r) => r.storageKey === input.storageKey)) throw new RepoError("Duplicate storage key.", "conflict");
     const row: ResumeRecord = { ...input, id: crypto.randomUUID(), userId, createdAt: new Date() };
     this.rows.set(row.id, row);
     return clone(row);

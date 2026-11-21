@@ -219,7 +219,7 @@ export function JobWorkspace({ initial, hasProfile, llm, applications }: { initi
               <div className="flex flex-wrap items-center gap-3">
                 <Button type="submit" disabled={!!busy}>{busy === "decide" ? "Saving…" : "Save decisions"}</Button>
                 <Button type="button" variant="outline" disabled={!!busy || decided === 0} onClick={async () => refreshWith(await call<{ posting: PostingDTO }>("pdf", `/api/postings/${p.id}/resume`, "POST"))}>{busy === "pdf" ? "Generating…" : "Generate tailored resume (PDF)"}</Button>
-                {t.tailoredResumeId && <a className="text-sm underline" href={`/api/resumes/${t.tailoredResumeId}`}>Download tailored resume</a>}
+                {t.tailoredResumeId && <a className="text-sm underline" href={`/api/apply/resumes/${t.tailoredResumeId}`}>Download tailored resume</a>}
               </div>
             </form>
           )}

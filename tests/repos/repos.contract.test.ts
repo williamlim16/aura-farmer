@@ -62,10 +62,9 @@ describe.each(impls)("repositories: %s", (_name, make) => {
       expect(await repos.resumes.get(ALICE, "not-a-uuid'; drop table x;--")).toBeNull();
     });
 
-    it("rejects duplicate storage keys", async () => {
-      const key = `${ALICE}/resumes/dup.pdf`;
-      await repos.resumes.create(ALICE, resumeInput(key));
-      await expect(repos.resumes.create(ALICE, resumeInput(key))).rejects.toThrow();
+    it("round-trips the resume mapping (team resume table columns)", async () => {
+      const r = await repos.resumes.create(ALICE, { storageKey: `${ALICE}/resumes/x.docx`, kind: "docx", filename: "cv.docx", sizeBytes: 42 });
+      expect(await repos.resumes.get(ALICE, r.id)).toMatchObject({ storageKey: `${ALICE}/resumes/x.docx`, kind: "docx", filename: "cv.docx", sizeBytes: 42 });
     });
   });
 

@@ -27,6 +27,10 @@ export function stackEnv(opts: { databaseUrl: string; authUrl: string; storageDi
     NEXT_PUBLIC_SUPABASE_URL: opts.authUrl,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "local-mock-publishable-key",
     LLM_PROVIDER: opts.llm ?? process.env.LLM_PROVIDER ?? "mock",
+    // src/env.js (team) requires these; the local stack never talks to Supabase
+    // Storage, so placeholders keep env validation happy without real keys.
+    BUCKET_ACCESS_KEY: process.env.BUCKET_ACCESS_KEY ?? "local-stack-placeholder",
+    BUCKET_SECRET_KEY: process.env.BUCKET_SECRET_KEY ?? "local-stack-placeholder",
   };
 }
 

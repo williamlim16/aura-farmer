@@ -29,8 +29,8 @@ beforeAll(async () => {
   await c.exec(fs.readFileSync(path.resolve(import.meta.dirname, "../../supabase/apply-policies.sql"), "utf8"));
   await c.exec(`grant select on all tables in schema public to authenticated;`);
   await c.exec(`
-    insert into "aura-farmer_resume" (user_id, storage_key, kind, filename, size_bytes) values
-      ('${ALICE}', 'a/1.pdf', 'pdf', 'a.pdf', 1), ('${BOB}', 'b/1.pdf', 'pdf', 'b.pdf', 1);
+    insert into "aura-farmer_resume" (user_id, storage_path, file_name, mime_type, file_size, created_at) values
+      ('${ALICE}', 'a/1.pdf', 'a.pdf', 'application/pdf', 1, now()), ('${BOB}', 'b/1.pdf', 'b.pdf', 'application/pdf', 1, now());
   `);
 });
 afterAll(async () => t?.close());
@@ -50,9 +50,9 @@ describe("Supabase RLS policies (PGlite with auth stub)", () => {
     expect(rows.map((r) => r.user_id)).toEqual([ALICE]);
   });
   it("clients cannot write directly", async () => {
-    await expect(asUser(ALICE, `insert into "aura-farmer_resume" (user_id, storage_key, kind, filename, size_bytes) values ('${ALICE}', 'x', 'pdf', 'x', 1)`)).rejects.toThrow();
+    await expect(asUser(ALICE, `insert into "aura-farmer_resume" (user_id, storage_path, file_name, mime_type, file_size, created_at) values ('${ALICE}', 'x', 'x', 'application/pdf', 1, now())`)).rejects.toThrow();
   });
   it("foreign keys reject unknown users", async () => {
-    await expect(t.client.exec(`insert into "aura-farmer_resume" (user_id, storage_key, kind, filename, size_bytes) values ('cccccccc-0000-4000-8000-000000000003', 'c', 'pdf', 'c', 1)`)).rejects.toThrow(/foreign key/);
+    await expect(t.client.exec(`insert into "aura-farmer_resume" (user_id, storage_path, file_name, mime_type, file_size, created_at) values ('cccccccc-0000-4000-8000-000000000003', 'c', 'c', 'application/pdf', 1, now())`)).rejects.toThrow(/foreign key/);
   });
 });

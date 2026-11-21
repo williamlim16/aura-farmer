@@ -14,23 +14,13 @@ import type { AutofillReport } from "~/server/apply/run";
 import type { PostingRequirements } from "~/lib/postings/types";
 import type { CandidateProfile } from "~/lib/profile/schema";
 
+// The resumes table is the team's (schema.ts); referenced lazily below, so the
+// circular import with schema.ts is safe (Drizzle resolves references later).
+import { resumes } from "./schema";
+
 // Same table prefix as schema.ts (drizzle.config tablesFilter: "aura-farmer_*").
 // Defined here rather than imported to avoid a circular import with schema.ts.
 const createTable = pgTableCreator((name) => `aura-farmer_${name}`);
-
-export const resumes = createTable(
-  "resume",
-  (d) => ({
-    id: d.uuid().primaryKey().defaultRandom(),
-    userId: d.uuid("user_id").notNull(),
-    storageKey: d.text("storage_key").notNull(),
-    kind: d.varchar({ length: 8 }).notNull(),
-    filename: d.varchar({ length: 255 }).notNull(),
-    sizeBytes: d.integer("size_bytes").notNull(),
-    createdAt: d.timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  }),
-  (t) => [uniqueIndex("resume_storage_key_idx").on(t.storageKey), index("resume_user_idx").on(t.userId, t.createdAt)],
-);
 
 export const candidateProfiles = createTable("candidate_profile", (d) => ({
   userId: d.uuid("user_id").primaryKey(),
