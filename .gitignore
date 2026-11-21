@@ -48,3 +48,4 @@ yarn-error.log*
 /bench-results
 # local dev data (file storage, dev database)
 /.data
+/demo-resume.pdf

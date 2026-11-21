@@ -1,0 +1,15 @@
+Senior Frontend Engineer, Example Corp (synthetic posting for demos)
+
+About the role
+You will build and maintain our customer-facing web platform.
+
+Requirements:
+- 5+ years of experience with TypeScript
+- Experience with React and Node.js
+- Experience with automated testing (Playwright or similar)
+- Authorized to work in Australia
+- Experience with Kubernetes
+
+Nice to have:
+- Experience with AWS
+- Bachelor's degree in Computer Science or equivalent experience
