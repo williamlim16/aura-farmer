@@ -33,11 +33,14 @@ function urlKey(url: string): string {
  * "advanced" depth is required — "basic" can't fetch Seek / Indeed search
  * pages and returns LinkedIn's without job links.
  */
-async function extractPages(urls: string[]): Promise<Map<string, string>> {
+export async function extractPages(
+  urls: string[],
+  attempts = EXTRACT_ATTEMPTS,
+): Promise<Map<string, string>> {
   const pages = new Map<string, string>();
   let pending = urls;
 
-  for (let attempt = 1; attempt <= EXTRACT_ATTEMPTS && pending.length > 0; attempt++) {
+  for (let attempt = 1; attempt <= attempts && pending.length > 0; attempt++) {
     const res = await fetch("https://api.tavily.com/extract", {
       method: "POST",
       headers: {

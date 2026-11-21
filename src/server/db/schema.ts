@@ -64,6 +64,13 @@ export const jobs = createTable(
     company: d.text(),
     location: d.text(),
     snippet: d.text(),
+    /** Full description scraped from the posting page (plain text, "• " bullets). */
+    description: d.text(),
+    /**
+     * How many times we've tried to fetch `description`. Capped so postings
+     * that have expired (or keep failing) aren't retried forever.
+     */
+    descriptionAttempts: d.smallint().default(0).notNull(),
     /** Tavily relevance score, 0–1. */
     score: d.real(),
     publishedAt: d.timestamp({ withTimezone: true }),
@@ -91,6 +98,7 @@ export const trackedJobs = createTable(
       .integer()
       .notNull()
       .references(() => jobs.id, { onDelete: "cascade" }),
+    status: d.varchar({ length: 32 }).default("lead").notNull(),
     createdAt: d
       .timestamp({ withTimezone: true })
       .$defaultFn(() => new Date())

@@ -18,7 +18,7 @@ export function RefreshJobsButton({ disabled }: { disabled?: boolean }) {
         ) : (
           <RefreshCw aria-hidden="true" className="size-3.5" />
         )}
-        {pending ? "Searching job boards..." : "Find jobs"}
+        {pending ? "Finding jobs & descriptions..." : "Find jobs"}
       </Button>
       {state && (
         <p

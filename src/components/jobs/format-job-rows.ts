@@ -1,5 +1,6 @@
 import { postedLabel } from "~/components/jobs/job-card";
 import type { JobRow } from "~/components/jobs/jobs-table";
+import type { TrackingStatus } from "~/lib/tracking-status";
 import { JOB_SOURCES, type JobSource } from "~/server/job-boards";
 
 export interface FormattableJob {
@@ -11,6 +12,7 @@ export interface FormattableJob {
   company: string | null;
   location: string | null;
   snippet: string | null;
+  description: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
 }
@@ -37,7 +39,7 @@ function foundLabel(date: Date): string {
 export function formatJobRows(
   jobs: FormattableJob[],
   trackedKeywords: Set<string>,
-  trackedJobIds: Set<number>,
+  trackedStatuses: ReadonlyMap<number, TrackingStatus>,
 ): JobRow[] {
   return jobs.map((job) => ({
     id: job.id,
@@ -47,10 +49,12 @@ export function formatJobRows(
     sourceLabel: JOB_SOURCES[job.source as JobSource]?.label ?? job.source,
     keyword: job.keyword,
     keywordTracked: trackedKeywords.has(job.keyword),
-    tracked: trackedJobIds.has(job.id),
+    tracked: trackedStatuses.has(job.id),
+    trackingStatus: trackedStatuses.get(job.id) ?? null,
     company: job.company,
     location: job.location,
     snippet: job.snippet,
+    description: job.description,
     postedAt: job.publishedAt?.getTime() ?? null,
     postedLabel: postedLabel(job).replace(/^Posted /, ""),
     foundAt: job.fetchedAt.getTime(),
