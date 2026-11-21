@@ -14,6 +14,7 @@ export interface FormattableJob {
   location: string | null;
   snippet: string | null;
   description: string | null;
+  recommendation: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
 }
@@ -57,6 +58,7 @@ export function formatJobRows(
     location: job.location,
     snippet: job.snippet,
     description: job.description,
+    recommendation: job.recommendation,
     postedAt: job.publishedAt?.getTime() ?? null,
     postedLabel: postedLabel(job).replace(/^Posted /, ""),
     foundAt: job.fetchedAt.getTime(),

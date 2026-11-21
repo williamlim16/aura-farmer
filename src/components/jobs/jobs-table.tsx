@@ -19,11 +19,15 @@ import {
   ChevronRight,
   ExternalLink,
   ListChecks,
+  Loader2,
   MapPin,
+  RefreshCw,
   Search,
+  Sparkles,
 } from "lucide-react";
 
 import {
+  researchJobAction,
   setJobsTrackedAction,
   setJobTrackingStatusAction,
 } from "~/app/jobs/actions";
@@ -60,6 +64,8 @@ export interface JobRow {
   snippet: string | null;
   /** Full description from the posting page; null until fetched. */
   description: string | null;
+  /** Tavily company overview and role-tailored recommendations; null until researched. */
+  recommendation: string | null;
   postedAt: number | null;
   postedLabel: string;
   foundAt: number;
@@ -74,7 +80,8 @@ type SortDir = "asc" | "desc";
 
 type OptimisticUpdate =
   | { type: "track"; jobIds: Set<number>; tracked: boolean }
-  | { type: "status"; jobIds: Set<number>; status: TrackingStatus };
+  | { type: "status"; jobIds: Set<number>; status: TrackingStatus }
+  | { type: "recommendation"; jobId: number; recommendation: string };
 
 const PAGE_SIZE = 20;
 const ALL = "all";
@@ -107,6 +114,9 @@ export function JobsTable({
   });
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const [researchingIds, setResearchingIds] = useState<Set<number>>(
+    () => new Set(),
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -114,6 +124,11 @@ export function JobsTable({
     rows,
     (state: JobRow[], update: OptimisticUpdate) =>
       state.map((r) => {
+        if (update.type === "recommendation") {
+          return r.id === update.jobId
+            ? { ...r, recommendation: update.recommendation }
+            : r;
+        }
         if (!update.jobIds.has(r.id)) return r;
         if (update.type === "track") {
           return {
@@ -187,9 +202,14 @@ export function JobsTable({
         (activeStatusFilter === ALL ||
           r.trackingStatus === activeStatusFilter) &&
         (!q ||
-          [r.title, r.company, r.location, r.snippet, r.description].some((f) =>
-            f?.toLowerCase().includes(q),
-          )),
+          [
+            r.title,
+            r.company,
+            r.location,
+            r.snippet,
+            r.description,
+            r.recommendation,
+          ].some((f) => f?.toLowerCase().includes(q))),
     );
     const sign = sort.dir === "asc" ? 1 : -1;
     // Stable tie-break on "found" so equal keys keep newest first.
@@ -205,8 +225,8 @@ export function JobsTable({
     (current + 1) * PAGE_SIZE,
   );
 
-  // Resume column only appears on the Tracking table.
-  const columnCount = mode === "tracking" ? 10 : 9;
+  // Recommendations + Resume columns only appear on the Tracking table.
+  const columnCount = mode === "tracking" ? 11 : 9;
 
   const allVisibleTracked =
     visible.length > 0 && visible.every((r) => r.tracked);
@@ -279,6 +299,37 @@ export function JobsTable({
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  }
+
+  function handleResearchJob(jobId: number) {
+    if (researchingIds.has(jobId)) return;
+    setActionError(null);
+    setResearchingIds((prev) => new Set(prev).add(jobId));
+    startTransition(async () => {
+      try {
+        const result = await researchJobAction({ jobId });
+        if (!result.ok) {
+          setActionError(result.message);
+          return;
+        }
+        if (result.recommendation) {
+          applyOptimistic({
+            type: "recommendation",
+            jobId,
+            recommendation: result.recommendation,
+          });
+        }
+        setExpanded((prev) => new Set(prev).add(jobId));
+      } catch {
+        setActionError("Couldn't complete company research. Please try again.");
+      } finally {
+        setResearchingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(jobId);
+          return next;
+        });
+      }
     });
   }
 
@@ -508,6 +559,14 @@ export function JobsTable({
                 >
                   Description
                 </th>
+                {mode === "tracking" && (
+                  <th
+                    scope="col"
+                    className="hidden px-3 py-3 font-mono font-medium lg:table-cell"
+                  >
+                    Recommendations
+                  </th>
+                )}
                 <th
                   scope="col"
                   className="hidden px-3 py-3 font-mono font-medium md:table-cell"
@@ -553,6 +612,10 @@ export function JobsTable({
                   const open = expanded.has(job.id);
                   const details = job.description ?? job.snippet;
                   const detailsId = `job-${job.id}-details`;
+                  const isResearching = researchingIds.has(job.id);
+                  const hasDetails =
+                    Boolean(details) ||
+                    (mode === "tracking" && Boolean(job.recommendation));
                   return (
                     <Fragment key={job.id}>
                       <tr
@@ -639,6 +702,50 @@ export function JobsTable({
                                 }
                               />
                             </div>
+                            {mode === "tracking" && (
+                              <div className="lg:hidden">
+                                {job.recommendation ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleExpanded(job.id)}
+                                    aria-expanded={open}
+                                    aria-controls={detailsId}
+                                    className="border-aura-primary/35 bg-primary/10 text-aura-primary hover:bg-primary/20 inline-flex h-7 cursor-pointer items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium transition-colors"
+                                  >
+                                    <Sparkles
+                                      aria-hidden="true"
+                                      className="size-3"
+                                    />
+                                    {open
+                                      ? "Hide recommendations"
+                                      : "View recommendations"}
+                                  </button>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="xs"
+                                    onClick={() => handleResearchJob(job.id)}
+                                    disabled={isResearching}
+                                  >
+                                    {isResearching ? (
+                                      <Loader2
+                                        aria-hidden="true"
+                                        className="size-3 animate-spin"
+                                      />
+                                    ) : (
+                                      <Sparkles
+                                        aria-hidden="true"
+                                        className="size-3"
+                                      />
+                                    )}
+                                    {isResearching
+                                      ? "Researching..."
+                                      : "Research company"}
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </td>
 
@@ -686,6 +793,75 @@ export function JobsTable({
                           )}
                         </td>
 
+                        {/* Recommendations */}
+                        {mode === "tracking" && (
+                          <td className="hidden w-[24%] min-w-56 px-3 py-4 lg:table-cell">
+                            {job.recommendation ? (
+                              <div className="flex items-start gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpanded(job.id)}
+                                  aria-expanded={open}
+                                  aria-controls={detailsId}
+                                  title={
+                                    open
+                                      ? "Hide company recommendations"
+                                      : "Show full company recommendations"
+                                  }
+                                  className="text-muted-foreground hover:text-foreground line-clamp-3 flex-1 cursor-pointer text-left text-xs leading-relaxed transition-colors"
+                                >
+                                  {job.recommendation}
+                                </button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  onClick={() => handleResearchJob(job.id)}
+                                  disabled={isResearching}
+                                  aria-label={`Re-run company research for ${job.title}`}
+                                  title="Re-run company research"
+                                  className="shrink-0"
+                                >
+                                  {isResearching ? (
+                                    <Loader2
+                                      aria-hidden="true"
+                                      className="size-3 animate-spin"
+                                    />
+                                  ) : (
+                                    <RefreshCw
+                                      aria-hidden="true"
+                                      className="size-3"
+                                    />
+                                  )}
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="xs"
+                                onClick={() => handleResearchJob(job.id)}
+                                disabled={isResearching}
+                              >
+                                {isResearching ? (
+                                  <Loader2
+                                    aria-hidden="true"
+                                    className="size-3 animate-spin"
+                                  />
+                                ) : (
+                                  <Sparkles
+                                    aria-hidden="true"
+                                    className="size-3"
+                                  />
+                                )}
+                                {isResearching
+                                  ? "Researching..."
+                                  : "Research company"}
+                              </Button>
+                            )}
+                          </td>
+                        )}
+
                         {/* Board */}
                         <td className="hidden px-3 py-4 whitespace-nowrap md:table-cell">
                           <Badge variant="teal">{job.sourceLabel}</Badge>
@@ -721,7 +897,7 @@ export function JobsTable({
                         {/* Actions */}
                         <td className="py-3.5 pr-5 pl-2">
                           <div className="flex items-center justify-end gap-1">
-                            {details && (
+                            {hasDetails && (
                               <Button
                                 variant="ghost"
                                 size="icon-sm"
@@ -760,15 +936,74 @@ export function JobsTable({
                         </td>
                       </tr>
 
-                      {open && details && (
+                      {open && hasDetails && (
                         <tr
                           id={detailsId}
                           className="border-border/50 bg-muted/30 border-b"
                         >
                           <td colSpan={columnCount} className="px-5 pt-0 pb-5">
-                            <p className="border-aura-primary/40 text-muted-foreground max-w-5xl border-l-2 pl-3 text-xs leading-relaxed whitespace-pre-line">
-                              {details}
-                            </p>
+                            {mode === "tracking" ? (
+                              <div className="max-w-5xl space-y-4">
+                                <div className="border-aura-secondary/40 space-y-2 border-l-2 pl-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-aura-secondary font-mono text-[11px] font-medium tracking-wider uppercase">
+                                      Company insights &amp; recommendations
+                                      {job.company ? ` — ${job.company}` : ""}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="xs"
+                                      onClick={() => handleResearchJob(job.id)}
+                                      disabled={isResearching}
+                                    >
+                                      {isResearching ? (
+                                        <Loader2
+                                          aria-hidden="true"
+                                          className="size-3 animate-spin"
+                                        />
+                                      ) : (
+                                        <RefreshCw
+                                          aria-hidden="true"
+                                          className="size-3"
+                                        />
+                                      )}
+                                      {job.recommendation
+                                        ? "Re-research"
+                                        : "Research company"}
+                                    </Button>
+                                  </div>
+                                  {job.recommendation ? (
+                                    <p className="text-muted-foreground text-xs leading-relaxed whitespace-pre-line">
+                                      {job.recommendation}
+                                    </p>
+                                  ) : (
+                                    <p className="text-muted-foreground text-xs">
+                                      No company research yet. Run Tavily
+                                      research to see company background and
+                                      tailored application tips.
+                                    </p>
+                                  )}
+                                </div>
+
+                                {details && (
+                                  <div className="border-aura-primary/40 space-y-1.5 border-l-2 pl-3">
+                                    <span className="text-muted-foreground block font-mono text-[11px] font-medium tracking-wider uppercase">
+                                      Job description
+                                    </span>
+                                    <p className="text-muted-foreground text-xs leading-relaxed whitespace-pre-line">
+                                      {details}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              details && (
+                                <p className="border-aura-primary/40 text-muted-foreground max-w-5xl border-l-2 pl-3 text-xs leading-relaxed whitespace-pre-line">
+                                  {details}
+                                </p>
+                              )
+                            )}
                           </td>
                         </tr>
                       )}

@@ -71,6 +71,13 @@ export const jobs = createTable(
      * that have expired (or keep failing) aren't retried forever.
      */
     descriptionAttempts: d.smallint().default(0).notNull(),
+    /** Tavily research company overview and role-tailored application recommendations. */
+    recommendation: d.text(),
+    /**
+     * How many times we've tried to fetch `recommendation`. Capped so
+     * unsearchable postings aren't retried forever.
+     */
+    recommendationAttempts: d.smallint().default(0).notNull(),
     /** Tavily relevance score, 0–1. */
     score: d.real(),
     publishedAt: d.timestamp({ withTimezone: true }),
@@ -244,6 +251,36 @@ export const tailoredResumes = createTable(
       .notNull(),
   }),
   (t) => [uniqueIndex("tailored_resume_user_job_idx").on(t.userId, t.jobId)],
+).enableRLS();
+
+/**
+ * The user's free-text "ideal company" preferences and the latest company
+ * research run for them. One row per user; a new run overwrites `result`.
+ * `result` is a `CompanyResearchResult` (see `~/server/companies/types`):
+ * every claim in it carries the source URL and a verbatim quote that was
+ * checked against the fetched page.
+ */
+export const companySearches = createTable(
+  "company_search",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    preferences: d.text().notNull(),
+    /** "running" | "done" | "failed" */
+    status: d.varchar({ length: 16 }).notNull(),
+    /** Human-readable step while running. */
+    progress: d.text(),
+    error: d.text(),
+    result: d.jsonb(),
+    model: d.varchar({ length: 64 }),
+    startedAt: d.timestamp({ withTimezone: true }),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  }),
+  (t) => [uniqueIndex("company_search_user_idx").on(t.userId)],
 ).enableRLS();
 
 export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
