@@ -1,0 +1,5 @@
+Next Steps for the Table:
+1. Add job description column
+2. Add a checkbox to choose to tailor resume for that job (using information from the profile and job description)
+	tailor(job_description, user_profile, resume_template_latex) -> LLM prompt engineering -> result.tex -> pdf
+3. Resume will then be stored on the database, and be persistently downloadable as a PDF

@@ -212,6 +212,40 @@ export const resumes = createTable(
   (t) => [index("resume_user_id_idx").on(t.userId)],
 );
 
+/**
+ * A resume tailored to one tracked job. One row per (user, job); re-tailoring
+ * overwrites it. `content` is the LLM's structured output (see
+ * `~/server/tailor/resume-schema`), `tex` is the rendered template, and the
+ * compiled PDF lives in Supabase Storage at `pdfPath` (null until compiled).
+ */
+export const tailoredResumes = createTable(
+  "tailored_resume",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    jobId: d
+      .integer()
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    content: d.jsonb().notNull(),
+    tex: d.text().notNull(),
+    pdfPath: d.varchar({ length: 1024 }),
+    /** Why the last PDF compile failed; null when it succeeded or hasn't run. */
+    compileError: d.text(),
+    model: d.varchar({ length: 64 }).notNull(),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  }),
+  (t) => [uniqueIndex("tailored_resume_user_job_idx").on(t.userId, t.jobId)],
+).enableRLS();
+
 export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   experiences: many(experiences),
   educations: many(educations),

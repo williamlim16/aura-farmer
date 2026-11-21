@@ -2,6 +2,7 @@ import { postedLabel } from "~/components/jobs/job-card";
 import type { JobRow } from "~/components/jobs/jobs-table";
 import type { TrackingStatus } from "~/lib/tracking-status";
 import { JOB_SOURCES, type JobSource } from "~/server/job-boards";
+import type { TailoredResumeStatus } from "~/server/tailored-resumes";
 
 export interface FormattableJob {
   id: number;
@@ -40,6 +41,7 @@ export function formatJobRows(
   jobs: FormattableJob[],
   trackedKeywords: Set<string>,
   trackedStatuses: ReadonlyMap<number, TrackingStatus>,
+  tailored?: ReadonlyMap<number, TailoredResumeStatus>,
 ): JobRow[] {
   return jobs.map((job) => ({
     id: job.id,
@@ -60,5 +62,6 @@ export function formatJobRows(
     foundAt: job.fetchedAt.getTime(),
     foundLabel: foundLabel(job.fetchedAt),
     foundTitle: dateFormat.format(job.fetchedAt),
+    tailored: tailored?.get(job.id) ?? null,
   }));
 }
