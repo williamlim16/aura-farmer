@@ -1,13 +1,5 @@
-import {
-  and,
-  asc,
-  eq,
-  inArray,
-  lt,
-  notInArray,
-  sql,
-  type AnyColumn,
-} from "drizzle-orm";
+import { and, asc, eq, inArray, max, sql, type AnyColumn } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
 import { jobKeywords, jobs } from "~/server/db/schema";
@@ -43,19 +35,14 @@ export async function addKeyword(userId: string, keyword: string) {
     .onConflictDoNothing({ target: [jobKeywords.userId, jobKeywords.keyword] });
 }
 
-/** Removes the keyword and the jobs it found. */
+/**
+ * Stops tracking a keyword. The jobs it found stay in the database (job data
+ * is never deleted); they just drop out of the feed — see `getJobFeed`.
+ */
 export async function removeKeyword(userId: string, keywordId: number) {
-  await db.transaction(async (tx) => {
-    const [removed] = await tx
-      .delete(jobKeywords)
-      .where(and(eq(jobKeywords.id, keywordId), eq(jobKeywords.userId, userId)))
-      .returning({ keyword: jobKeywords.keyword });
-    if (removed) {
-      await tx
-        .delete(jobs)
-        .where(and(eq(jobs.userId, userId), eq(jobs.keyword, removed.keyword)));
-    }
-  });
+  await db
+    .delete(jobKeywords)
+    .where(and(eq(jobKeywords.id, keywordId), eq(jobKeywords.userId, userId)));
 }
 
 /**
@@ -67,11 +54,26 @@ export async function removeKeyword(userId: string, keywordId: number) {
  * an Indeed search, 2nd-newest Seek, … Rows without an id (Indeed search
  * pages) keep Tavily's relevance order.
  *
- * Only jobs found by one of the user's *current* keywords are shown, so a
- * removed keyword's results disappear even if some rows outlived the removal
- * (e.g. a refresh that was still running when the keyword was removed).
+ * Job rows are never deleted, so the feed filters what it shows:
+ * - only jobs whose keyword the user currently tracks, and
+ * - for each (keyword, board), only the jobs from its most recent search —
+ *   i.e. rows with that pair's latest `fetchedAt`. Older results (likely
+ *   expired postings) stay in the DB but are hidden. A board whose search
+ *   fails doesn't get new rows, so its previous results keep showing.
  */
 export async function getJobFeed(userId: string, limit = 100) {
+  const latest = alias(jobs, "latest");
+  const latestFetchedAt = db
+    .select({ at: max(latest.fetchedAt) })
+    .from(latest)
+    .where(
+      and(
+        eq(latest.userId, jobs.userId),
+        eq(latest.keyword, jobs.keyword),
+        eq(latest.source, jobs.source),
+      ),
+    );
+
   const rows = await db
     .select()
     .from(jobs)
@@ -79,6 +81,7 @@ export async function getJobFeed(userId: string, limit = 100) {
       and(
         eq(jobs.userId, userId),
         inArray(jobs.keyword, currentKeywords(userId)),
+        eq(jobs.fetchedAt, sql`(${latestFetchedAt})`),
       ),
     );
 
@@ -112,30 +115,32 @@ export async function getJobFeed(userId: string, limit = 100) {
 
 /**
  * Pipeline: read the user's keywords from the DB → search the job boards via
- * Tavily → upsert the results into the `job` table → drop anything from a
- * previous search that wasn't found again (likely expired / no longer
- * advertised) → drop jobs belonging to keywords the user has since removed.
+ * Tavily → upsert the results into the `job` table.
+ *
+ * Nothing is deleted. Each posting is stored once per user (unique on
+ * user + url): a posting found again is updated in place — fresh details,
+ * the keyword that found it, and a new `fetchedAt` — rather than duplicated.
  */
 export async function refreshJobsForUser(userId: string) {
   const keywords = await getKeywords(userId);
   if (keywords.length === 0) {
-    return { saved: 0, removed: 0, errors: ["Add at least one job title first."] };
+    return { saved: 0, added: 0, errors: ["Add at least one job title first."] };
   }
 
   let saved = 0;
-  let removed = 0;
+  let added = 0;
   const errors: string[] = [];
   const runStartedAt = new Date();
 
   for (const { keyword } of keywords) {
-    const { results, succeeded, errors: searchErrors } = await searchJobs(keyword);
+    const { results, errors: searchErrors } = await searchJobs(keyword);
     errors.push(...searchErrors.map((e) => `"${keyword}" — ${e}`));
 
     if (results.length > 0) {
       // Dedupe within this batch (Postgres rejects an upsert that hits the same row twice).
       const unique = [...new Map(results.map((r) => [r.url, r])).values()];
 
-      await db
+      const upserted = await db
         .insert(jobs)
         .values(unique.map((r) => ({ ...r, userId, keyword, fetchedAt: runStartedAt })))
         .onConflictDoUpdate({
@@ -149,38 +154,13 @@ export async function refreshJobsForUser(userId: string) {
             publishedAt: excluded(jobs.publishedAt),
             fetchedAt: excluded(jobs.fetchedAt),
           },
-        });
+        })
+        // Postgres sets xmax = 0 on freshly inserted rows, non-zero on updates.
+        .returning({ inserted: sql<boolean>`(xmax = 0)` });
       saved += unique.length;
-    }
-
-    // Prune stale results — but only for boards whose search actually
-    // succeeded, so a Tavily hiccup doesn't wipe a board's jobs.
-    if (succeeded.length > 0) {
-      const stale = await db
-        .delete(jobs)
-        .where(
-          and(
-            eq(jobs.userId, userId),
-            eq(jobs.keyword, keyword),
-            inArray(jobs.source, succeeded),
-            lt(jobs.fetchedAt, runStartedAt),
-          ),
-        )
-        .returning({ id: jobs.id });
-      removed += stale.length;
+      added += upserted.filter((r) => r.inserted).length;
     }
   }
 
-  // Drop jobs whose keyword is no longer tracked. Catches rows inserted by
-  // this run for a keyword the user removed while the search was in flight.
-  await db
-    .delete(jobs)
-    .where(
-      and(
-        eq(jobs.userId, userId),
-        notInArray(jobs.keyword, currentKeywords(userId)),
-      ),
-    );
-
-  return { saved, removed, errors };
+  return { saved, added, errors };
 }

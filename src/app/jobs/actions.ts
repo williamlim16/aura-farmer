@@ -60,7 +60,7 @@ export async function refreshJobsAction(): Promise<ActionState> {
   const user = await requireUser();
 
   try {
-    const { saved, removed, errors } = await refreshJobsForUser(user.id);
+    const { saved, added, errors } = await refreshJobsForUser(user.id);
     revalidatePath("/jobs");
 
     if (saved === 0 && errors.length > 0) {
@@ -68,7 +68,7 @@ export async function refreshJobsAction(): Promise<ActionState> {
     }
     const base =
       `Found ${saved} job${saved === 1 ? "" : "s"}` +
-      (removed > 0 ? `, removed ${removed} no longer listed.` : ".");
+      (saved > 0 ? ` (${added} new).` : ".");
     return {
       ok: true,
       message: errors.length ? `${base} Some searches failed: ${errors.join(" · ")}` : base,
