@@ -1,4 +1,4 @@
-import { LlmProvider } from "~/lib/apply/decision/llm";
+import { LlmProvider, type LlmClient } from "~/lib/apply/decision/llm";
 import type { DecisionProvider } from "~/lib/apply/decision/types";
 import { ANTHROPIC_PRICING, AnthropicLlm } from "./anthropic";
 import { createMockLlm } from "./mock";
@@ -15,6 +15,27 @@ import { JevProvider } from "~/lib/apply/decision/jev";
  *                   Optional: LLM_MODEL (default claude-opus-5-5), LLM_EFFORT,
  *                   LLM_TIMEOUT_MS, LLM_MAX_CALLS_PER_RUN.
  */
+/**
+ * The LLM client behind the fallback tier, with the same safety gates, or null when no LLM is
+ * configured. Used by option suggestions (choose among real form options only).
+ */
+export function createLlmClient(env: NodeJS.ProcessEnv): LlmClient | null {
+  const p = env.LLM_PROVIDER ?? "none";
+  if (p === "none") return null;
+  if (p === "mock") {
+    if (env.NODE_ENV === "production") throw new Error("LLM_PROVIDER=mock is not allowed in production.");
+    return createMockLlm();
+  }
+  if (p === "anthropic") {
+    if (env.LLM_ALLOW_PAID_CALLS !== "1") throw new Error("LLM_PROVIDER=anthropic makes paid API calls; set LLM_ALLOW_PAID_CALLS=1 to confirm.");
+    const apiKey = env.APPLY_LLM_API_KEY?.trim();
+    if (!apiKey) throw new Error("LLM_PROVIDER=anthropic needs APPLY_LLM_API_KEY (server-side only).");
+    const effort = (["low", "medium", "high"] as const).find((e) => e === env.LLM_EFFORT) ?? "low";
+    return new AnthropicLlm({ apiKey, model: env.LLM_MODEL ?? "claude-opus-5-5", effort, timeoutMs: Number(env.LLM_TIMEOUT_MS ?? 30_000) });
+  }
+  throw new Error(`Unknown LLM_PROVIDER "${p}".`);
+}
+
 export function createLlmProviders(env: NodeJS.ProcessEnv): DecisionProvider[] {
   const p = env.LLM_PROVIDER ?? "none";
   if (p === "none") return [];

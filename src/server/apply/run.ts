@@ -3,6 +3,7 @@ import type { Frame, Page } from "playwright";
 import type { DecisionEngine, FieldDecision } from "~/lib/apply/decision/engine";
 import type { DecisionContext, ProviderUsage } from "~/lib/apply/decision/types";
 import type { DecisionTier, FieldOutcome } from "~/lib/apply/types";
+import { ASYNC_OPTION_THRESHOLD } from "~/lib/apply/decision/rules";
 import { enrichComboboxOptions } from "./combobox";
 import { extractForm } from "./extract-form";
 import { fillFields } from "./fill";
@@ -24,6 +25,26 @@ export interface FieldReport {
   round: number;
   /** 1-based form step (multi-step forms). */
   step: number;
+  /** Real options of a select/radio/combobox (capped). For a failed live search: the results the page offered. */
+  options?: string[];
+  /** True when `options` is only the first page of a long, searchable list. */
+  optionsPartial?: boolean;
+  /** The person's own answer for this question, when there was one. */
+  answer?: string;
+  /** Real options the person can pick instead (ranked best first). */
+  suggestions?: string[];
+  /** Who proposed `suggestions`: deterministic matching or the LLM. Either way the person must confirm. */
+  suggestedBy?: "rules" | "ai";
+  /** Confidence of the decision (1 = the person's own answer or an exact profile fact). */
+  confidence?: number;
+  note?: string;
+}
+
+const MAX_REPORTED_OPTIONS = 300;
+function optionsFor(control: string, options: string[], live?: string[]): Partial<FieldReport> {
+  if (live?.length) return { options: live.slice(0, MAX_REPORTED_OPTIONS), optionsPartial: true };
+  if (!["select", "radio", "combobox"].includes(control) || options.length === 0) return {};
+  return { options: options.slice(0, MAX_REPORTED_OPTIONS), optionsPartial: options.length >= ASYNC_OPTION_THRESHOLD };
 }
 
 export interface StepReport {
@@ -156,7 +177,7 @@ export async function runAutofill(
   opts: { resumePath: string | null; guard: SubmitGuard; maxRounds?: number; maxSteps?: number; settleMs?: number },
 ): Promise<AutofillReport> {
   const t0 = performance.now();
-  const all: (FieldDecision & { round: number; step: number; fillOk?: boolean; fillErr?: string })[] = [];
+  const all: (FieldDecision & { round: number; step: number; fillOk?: boolean; fillErr?: string; fillOptions?: string[] })[] = [];
   const seen = new Set<string>();
   const steps: StepReport[] = [];
   const byTier: Record<string, number> = {};
@@ -189,7 +210,7 @@ export async function runAutofill(
       browserActions += results.filter((r) => r.ok).length;
       for (const d of decisions) {
         const r = results.find((x) => x.id === d.field.id);
-        all.push({ ...d, round, step, fillOk: r?.ok, fillErr: r?.error });
+        all.push({ ...d, round, step, fillOk: r?.ok, fillErr: r?.error, fillOptions: r?.options });
       }
       await target.waitForTimeout(settle); // let conditional fields render
     }
@@ -256,6 +277,12 @@ export async function runAutofill(
       ...(d.action === "human" || d.action === "skip" ? { reason: d.reason } : {}),
       ...(a.fillErr ? { reason: a.fillErr } : {}),
       ...(reason ? { reason } : {}),
+      ...optionsFor(a.field.control, a.field.options, a.fillOptions),
+      ...(d.action === "fill" && d.answer !== undefined ? { answer: d.answer } : {}),
+      ...(d.action === "human" && d.answer !== undefined ? { answer: d.answer } : {}),
+      ...(d.action === "human" && d.suggestions?.length ? { suggestions: d.suggestions } : {}),
+      ...(d.action === "fill" || d.action === "upload" ? { confidence: d.confidence } : {}),
+      ...(d.action === "fill" && d.note ? { note: d.note } : {}),
       round: a.round,
       step: a.step,
     };

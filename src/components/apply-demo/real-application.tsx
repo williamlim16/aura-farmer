@@ -7,8 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import type { CandidateProfile } from "~/lib/profile/schema";
+import { answerableFields, answerControl, confidenceLabel, savedAnswersFrom, statusOf, type ReportField } from "./answers";
 
-type Field = { id: string; label: string; kind: string; control: string; required: boolean; tier: string; outcome: string; value?: string | boolean; reason?: string; step: number };
+type Field = ReportField;
 type Evidence = {
   app: { ats: string; postingUrl: string; applyUrl: string; via: string };
   runtime: { executor: string; chromiumVersion: string; region: string | null; durationMs: number; providers: string[] };
@@ -25,9 +26,6 @@ type Outcome =
   | { status: "uncertain"; reason: string; finalUrl: string };
 type Submitted = Evidence & { outcome: Outcome; submitRequests: string[] };
 
-/** Must match normQ in ~/lib/apply/decision/rules (saved answers are keyed by normalised question text). */
-const normQ = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
-
 const CONTACT = [
   ["fullName", "Full name"],
   ["firstName", "First name"],
@@ -41,7 +39,7 @@ const CONTACT = [
 ] as const;
 type ContactKey = (typeof CONTACT)[number][0];
 
-const OUTCOME_STYLE: Record<string, string> = { verified: "bg-green-100 text-green-900", mismatch: "bg-amber-100 text-amber-900", error: "bg-red-100 text-red-900" };
+const TONE: Record<string, string> = { ok: "bg-green-100 text-green-900", warn: "bg-amber-100 text-amber-900", bad: "bg-red-100 text-red-900", idle: "bg-gray-100 text-gray-800" };
 
 async function post<T>(path: string, fd: FormData): Promise<T> {
   const res = await fetch(path, { method: "POST", body: fd });
@@ -102,9 +100,7 @@ export function RealApplication({ token }: { token: string }) {
       else if (c[k]?.value !== v) c[k] = { value: v, source: "user", confidence: 1 };
     }
     p.contact = c;
-    const saved: Record<string, string> = {};
-    for (const [label, v] of Object.entries(answers)) if (v.trim()) saved[normQ(label)] = v.trim();
-    p.preferences = { ...(p.preferences ?? {}), savedAnswers: saved };
+    p.preferences = { ...(p.preferences ?? {}), savedAnswers: savedAnswersFrom(answers) };
     return p;
   }
 
@@ -146,8 +142,9 @@ export function RealApplication({ token }: { token: string }) {
   }
 
   const fields = review?.report.fields ?? [];
-  const open = fields.filter((f) => f.outcome !== "verified" && f.label);
-  const requiredOpen = open.filter((f) => f.required);
+  const questions = answerableFields(fields, answers);
+  const open = fields.filter((f) => f.outcome !== "verified" && f.label && f.control !== "file" && !(f.outcome === "skipped" && !f.required));
+  const requiredOpen = fields.filter((f) => f.required && f.outcome !== "verified" && f.label && !(f.control === "file" && f.outcome === "skipped"));
   const answersChanged = review && reviewedProfileJson !== JSON.stringify(profile ? finalProfile() : null);
   const canSubmit = !!review && requiredOpen.length === 0 && approved && !answersChanged && !submitted;
 
@@ -215,33 +212,81 @@ export function RealApplication({ token }: { token: string }) {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left">
                 <thead>
-                  <tr className="border-b"><th className="p-1">Question</th><th className="p-1">Filled value</th><th className="p-1">Source</th><th className="p-1">Read-back</th></tr>
+                  <tr className="border-b"><th className="p-1">Question</th><th className="p-1">Your answer</th><th className="p-1">Selected in the form</th><th className="p-1">Status</th><th className="p-1">Details</th></tr>
                 </thead>
                 <tbody>
-                  {fields.map((f) => (
-                    <tr key={`${f.step}-${f.id}`} className="border-b align-top">
-                      <td className="p-1">{f.label || f.id}{f.required ? " *" : ""}</td>
-                      <td className="p-1 break-all">{f.value === undefined ? <span className="text-muted-foreground">{f.reason ?? "—"}</span> : String(f.value)}</td>
-                      <td className="p-1">{f.tier}</td>
-                      <td className="p-1"><span className={`rounded px-1 ${OUTCOME_STYLE[f.outcome] ?? "bg-gray-100"}`}>{f.outcome.replace(/_/g, " ")}</span></td>
-                    </tr>
-                  ))}
+                  {fields.map((f) => {
+                    const st = statusOf(f);
+                    const conf = confidenceLabel(f);
+                    const typed = answers[f.label]?.trim();
+                    return (
+                      <tr key={`${f.step}-${f.id}`} className="border-b align-top">
+                        <td className="p-1">{f.label || f.id}{f.required ? " *" : ""}{f.control === "file" ? " (file upload)" : ""}</td>
+                        <td className="p-1 break-words">{f.control === "file" ? "—" : (typed ?? f.answer ?? <span className="text-muted-foreground">from your resume</span>)}</td>
+                        <td className="p-1 break-all">{f.value === undefined || f.value === "" ? (f.control === "file" && f.outcome === "verified" ? "file attached" : "—") : String(f.value)}</td>
+                        <td className="p-1"><span className={`rounded px-1 ${TONE[st.tone]}`}>{st.label}</span>{conf ? <span className="text-muted-foreground"> · {conf}</span> : null}</td>
+                        <td className="p-1">
+                          {f.outcome !== "verified" && f.reason ? <div>{f.reason}</div> : f.note && f.note !== "Your selection" ? <div className="text-muted-foreground">{f.note}</div> : null}
+                          {f.outcome !== "verified" && f.options?.length ? (
+                            <details>
+                              <summary>Available options ({f.options.length}{f.optionsPartial ? "+" : ""})</summary>
+                              <ul className="list-disc pl-5">{f.options.slice(0, 60).map((o) => <li key={o}>{o}</li>)}</ul>
+                              {f.optionsPartial && <p className="text-muted-foreground">Partial list: the form searches the rest as you type.</p>}
+                            </details>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            {open.length > 0 && (
-              <div className="flex flex-col gap-2 rounded border p-3">
-                <p className="font-medium">Your answers for the remaining questions ({requiredOpen.length} required)</p>
-                <p className="text-muted-foreground">Type exactly what you want submitted (for a dropdown, type the option text; for a checkbox, type Yes). Leave optional ones blank to skip. EEO and consent questions are only ever filled with your own typed answer.</p>
-                {open.map((f) => (
-                  <div key={`a-${f.step}-${f.id}`} className="flex flex-col gap-1">
-                    <Label htmlFor={`a-${f.id}`}>{f.label}{f.required ? " *" : ""} <span className="text-muted-foreground">({f.reason ?? f.outcome})</span></Label>
-                    <Input id={`a-${f.id}`} value={answers[f.label] ?? ""} onChange={(e) => setAnswers({ ...answers, [f.label]: e.target.value })} />
-                  </div>
-                ))}
+            {questions.length > 0 && (
+              <div className="flex flex-col gap-3 rounded border p-3">
+                <p className="font-medium">Your answers ({requiredOpen.length} required still open)</p>
+                <p className="text-muted-foreground">
+                  Choose from the form&apos;s real options (no need to guess the wording). Long lists such as schools search the form&apos;s own list as you type. Suggestions are only applied when you pick them. EEO and consent questions are filled only with an answer you choose here. Your answers are kept between runs.
+                </p>
+                {questions.map((f) => {
+                  const kind = answerControl(f);
+                  const value = answers[f.label] ?? "";
+                  const set = (v: string) => setAnswers({ ...answers, [f.label]: v });
+                  const id = `a-${f.step}-${f.id}`;
+                  return (
+                    <div key={id} className="flex flex-col gap-1">
+                      <Label htmlFor={id}>{f.label}{f.required ? " *" : ""}</Label>
+                      {kind === "select" && (
+                        <select id={id} className="rounded border p-2" value={value} onChange={(e) => set(e.target.value)}>
+                          <option value="">— choose —</option>
+                          {f.options!.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      )}
+                      {kind === "search" && (
+                        <>
+                          <Input id={id} list={`${id}-list`} value={value} placeholder="Type to search the form's list" onChange={(e) => set(e.target.value)} />
+                          <datalist id={`${id}-list`}>{(f.options ?? []).map((o) => <option key={o} value={o} />)}</datalist>
+                        </>
+                      )}
+                      {kind === "checkbox" && (
+                        <label className="flex items-center gap-2"><input id={id} type="checkbox" checked={/^yes$/i.test(value)} onChange={(e) => set(e.target.checked ? "Yes" : "")} /> Yes (I tick this myself)</label>
+                      )}
+                      {kind === "textarea" && <textarea id={id} className="rounded border p-2" rows={3} value={value} onChange={(e) => set(e.target.value)} />}
+                      {kind === "text" && <Input id={id} value={value} onChange={(e) => set(e.target.value)} />}
+                      {f.suggestions && f.suggestions.length > 0 && f.outcome !== "verified" && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-muted-foreground">{f.suggestedBy === "ai" ? "AI suggestion" : "Suggested"} from the form&apos;s options (confirm by choosing):</span>
+                          {f.suggestions.slice(0, 6).map((o) => (
+                            <Button key={o} type="button" size="sm" variant={value === o ? "default" : "outline"} onClick={() => set(o)}>{o}</Button>
+                          ))}
+                        </div>
+                      )}
+                      {f.outcome !== "verified" && f.reason && value.trim() !== "" && <p className="text-amber-800">{f.reason}</p>}
+                    </div>
+                  );
+                })}
                 <div>
-                  <Button variant="outline" onClick={runReview} disabled={!!busy}>{busy === "review" ? "Re-filling…" : "Re-run with my answers"}</Button>
+                  <Button onClick={runReview} disabled={!!busy}>{busy === "review" ? "Re-filling in the cloud…" : "Apply my answers and re-run"}</Button>
                 </div>
               </div>
             )}

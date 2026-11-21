@@ -34,6 +34,14 @@ export async function enrichComboboxOptions(target: Target, fields: FormField[])
 }
 
 /** Type to filter, then click the single safe match. Throws if no unambiguous option. */
+/** A live search that could not settle on one option; carries the real options the page offered. */
+export class OptionLookupError extends Error {
+  constructor(message: string, readonly options: string[]) {
+    super(message);
+    this.name = "OptionLookupError";
+  }
+}
+
 const NON_OPTION = /^(loading|searching|no (options|results)|type to search)/i;
 const tokens = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 1);
 
@@ -67,7 +75,12 @@ export async function fillCombobox(target: Target, combo: Locator, value: string
   }
   if (i < 0) {
     await combo.press("Escape").catch(() => undefined);
-    throw new Error(`no unambiguous option for "${value}"`);
+    await combo.fill("").catch(() => undefined);
+    const real = texts.filter((t) => t && !NON_OPTION.test(t));
+    throw new OptionLookupError(
+      real.length === 0 ? `The form's search found no option for “${value}”.` : `“${value}” did not match one option in the form's search (${real.length} result${real.length === 1 ? "" : "s"}). Choose one of the results shown.`,
+      real.slice(0, 50),
+    );
   }
   await opts.nth(i).click();
 }

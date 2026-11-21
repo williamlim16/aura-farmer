@@ -2,7 +2,7 @@ import type { Frame, Locator, Page } from "playwright";
 
 import { pickOption } from "~/lib/apply/option-match";
 import type { FieldDecision } from "~/lib/apply/decision/engine";
-import { fillCombobox } from "./combobox";
+import { fillCombobox, OptionLookupError } from "./combobox";
 
 type Target = Page | Frame;
 
@@ -10,6 +10,8 @@ export interface FillResult {
   id: string;
   ok: boolean;
   error?: string;
+  /** Real options the page offered when a live search could not pick one. */
+  options?: string[];
   attempts: number;
 }
 
@@ -122,7 +124,13 @@ export async function fillFields(page: Target, decisions: FieldDecision[], opts:
         await page.waitForTimeout(250 * attempts); // dynamic forms: give the DOM a moment
       }
     }
-    results.push({ id: fd.field.id, ok: !lastErr, attempts, ...(lastErr ? { error: lastErr instanceof Error ? lastErr.message.split("\n")[0] : "fill failed" } : {}) });
+    results.push({
+      id: fd.field.id,
+      ok: !lastErr,
+      attempts,
+      ...(lastErr ? { error: lastErr instanceof Error ? lastErr.message.split("\n")[0] : "fill failed" } : {}),
+      ...(lastErr instanceof OptionLookupError ? { options: lastErr.options } : {}),
+    });
   }
   return results;
 }

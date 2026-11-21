@@ -75,10 +75,20 @@ export type Decision =
       hint?: string;
       /** The user typed this exact answer for this exact question (only rule-tier saved answers set it). */
       userProvided?: boolean;
+      /** What the person typed or chose, when it differs from the value filled (e.g. "Man" -> "Male"). */
+      answer?: string;
     }
   | { action: "upload"; file: "resume"; tier: DecisionTier; confidence: number }
   | { action: "skip"; reason: string; tier: DecisionTier | "guard" }
-  | { action: "human"; reason: string; tier: DecisionTier | "guard" };
+  | {
+      action: "human";
+      reason: string;
+      tier: DecisionTier | "guard";
+      /** Real form options the person may pick instead, ranked best first. Never invented. */
+      suggestions?: string[];
+      /** The person's own answer that could not be applied (never silently dropped). */
+      answer?: string;
+    };
 
 export type FieldOutcome =
   | "verified" // filled and read back equal

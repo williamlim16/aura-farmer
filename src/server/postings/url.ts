@@ -26,7 +26,8 @@ export function parsePostingUrl(raw: string): ParsedPostingUrl {
   const host = u.hostname.toLowerCase();
   const parts = u.pathname.split("/").filter(Boolean);
 
-  if (host === "boards.greenhouse.io" || host === "job-boards.greenhouse.io" || host === "job-boards.eu.greenhouse.io") {
+  // Global and regional Greenhouse hosts (job-boards.greenhouse.io, job-boards.eu.…, job-boards.anz.…).
+  if (/^(?:job-)?boards(?:\.[a-z]{2,6})?\.greenhouse\.io$/.test(host)) {
     // /{board}/jobs/{id}
     const [board, kw, jobId] = parts;
     if (board && kw === "jobs" && jobId && SLUG.test(board) && NUMERIC.test(jobId)) {

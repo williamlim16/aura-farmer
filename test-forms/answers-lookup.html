@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Answer matching form (synthetic, modelled on a real Greenhouse form)</title>
+<style>body{font-family:system-ui;max-width:680px;margin:24px auto}.field{margin:12px 0}label{display:block}.req{color:#c00}[role=listbox]{border:1px solid #ccc;list-style:none;margin:0;padding:0}[role=option]{padding:4px;cursor:pointer}</style></head>
+<body><h1>Data Scientist (synthetic)</h1>
+<form id="application_form" method="post" action="/submit">
+  <div class="field"><label for="first_name">First Name <span class="req">*</span></label><input id="first_name" type="text" aria-required="true" required></div>
+  <div class="field"><label for="email">Email <span class="req">*</span></label><input id="email" type="text" aria-required="true" required></div>
+  <div class="field"><label id="school-label">School <span class="req">*</span></label><div data-combo="school" data-async="1"></div></div>
+  <div class="field"><label id="degree-label">Degree <span class="req">*</span></label><div data-combo="degree" data-options="Associate's Degree|Bachelor's Degree|Doctor of Philosophy (Ph.D.)|High School|Master of Business Administration (M.B.A.)|Master's Degree|Other"></div></div>
+  <div class="field"><label id="auth-label">Are you legally authorised to work in Australia without restrictions? <span class="req">*</span></label><div data-combo="auth" data-options="Yes, I am an Australian citizen or permanent resident|Yes, I hold a valid visa with full work rights|Yes, I hold a valid visa with conditional work rights|No, I will require visa sponsorship"></div></div>
+  <div class="field"><label id="loc-label">Are you located in any of these locations? <span class="req">*</span></label><div data-combo="loc" data-options="Brisbane|Canberra|Melbourne|Sydney|No, I am not located in any of these locations"></div></div>
+  <div class="field"><label id="gender-label">What gender do you identify with? <span class="req">*</span></label><div data-combo="gender" data-options="Female|Male|Non-Binary|Prefer not to say"></div></div>
+  <div class="field"><label id="pron-label">What are your pronouns?</label><div data-combo="pron" data-options="She/Her/Hers|He/Him/His|They/Them/Theirs|Prefer not to say"></div></div>
+  <div class="field"><label id="cover-label">Cover Letter</label><button type="button" onclick="document.getElementById('cover').click()">Attach</button><input id="cover" type="file" name="cover" style="display:none" aria-labelledby="cover-label"></div>
+  <button type="submit">Submit application</button>
+</form>
+<script>
+// 150 schools. Like the real form, only the first 100 are listed when opened; typing searches all of them (async).
+const SCHOOLS = Array.from({ length: 140 }, (_, i) => "Sample College " + String(i + 1).padStart(3, "0")).concat(["University of Sydney", "University of Sydney (Online)", "University of Melbourne", "University of Queensland", "Macquarie University", "UNSW Sydney", "Monash University", "RMIT University", "Deakin University", "Curtin University"]);
+document.querySelectorAll("[data-combo]").forEach((root) => {
+  const k = root.dataset.combo, async = !!root.dataset.async, opts = async ? SCHOOLS : root.dataset.options.split("|");
+  root.innerHTML = '<input role="combobox" id="' + k + '" aria-labelledby="' + k + '-label" aria-controls="' + k + '-list" aria-expanded="false" autocomplete="off"><span data-value></span><ul role="listbox" id="' + k + '-list" hidden></ul><input type="hidden" name="' + k + '">';
+  const input = root.querySelector("input"), list = root.querySelector("ul"), shown = root.querySelector("[data-value]"), hid = root.querySelector("input[type=hidden]");
+  let tick = 0;
+  const render = (items) => { list.innerHTML = items.map((o) => '<li role="option">' + o + '</li>').join("") || '<li>No options</li>'; list.hidden = false; };
+  const open = () => {
+    const q = input.value.toLowerCase();
+    if (!async) return render(opts.filter((o) => o.toLowerCase().includes(q)));
+    const my = ++tick;
+    if (!q) return render(opts.slice(0, 100));
+    list.innerHTML = "<li>Loading...</li>"; list.hidden = false;
+    setTimeout(() => { if (my === tick) render(opts.filter((o) => o.toLowerCase().includes(q)).slice(0, 50)); }, 350);
+  };
+  input.addEventListener("mousedown", open); input.addEventListener("input", open);
+  input.addEventListener("keydown", (e) => { if (e.key === "Escape") list.hidden = true; if (e.key === "Enter") e.preventDefault(); });
+  list.addEventListener("mousedown", (e) => { const li = e.target.closest("[role=option]"); if (!li) return; e.preventDefault(); hid.value = shown.textContent = li.textContent; input.value = ""; list.hidden = true; });
+});
+</script></body></html>

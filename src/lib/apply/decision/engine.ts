@@ -3,6 +3,7 @@
  * no tier can bypass. Records which tier decided each field and per-tier
  * latency/usage, which is what the benchmark reports.
  */
+import { decideSavedAnswer } from "./rules";
 import { classifyField } from "../classify";
 import { ALWAYS_HUMAN_KINDS, type Classification, type Decision, type DecisionTier, type FormField } from "../types";
 import type { DecisionContext, DecisionInput, DecisionProvider, ProviderUsage } from "./types";
@@ -35,6 +36,8 @@ export function guardDecision(cls: Classification, d: Decision, field: FormField
   // sets userProvided, so no model output can take this path.
   if (d.action === "fill" && d.tier === "rule" && d.userProvided === true) return d;
   if (ALWAYS_HUMAN_KINDS.has(cls.kind)) {
+    // The person's own answer could not be applied: keep the specific reason and real options.
+    if (d.action === "human" && d.tier === "rule" && d.answer !== undefined) return d;
     return { action: "human", reason: GUARD_REASON[cls.kind] ?? "Sensitive field.", tier: "guard" };
   }
   if (d.action === "fill" && field.control === "checkbox" && d.tier !== "rule") {
@@ -51,7 +54,13 @@ export class DecisionEngine {
     const inputs: DecisionInput[] = fields.map((field) => ({ field, classification: classifyField(field) }));
     const decided = new Map<string, Decision>();
 
-    // Sensitive fields never reach any provider, so they are never sent to an LLM.
+    // Sensitive fields never reach any provider, so they are never sent to an LLM. The only thing
+    // that can fill them is the person's own saved answer, applied by this deterministic function.
+    for (const i of inputs) {
+      if (!ALWAYS_HUMAN_KINDS.has(i.classification.kind)) continue;
+      const own = decideSavedAnswer(i, ctx);
+      if (own) decided.set(i.field.id, own);
+    }
     let pending = inputs.filter((i) => !ALWAYS_HUMAN_KINDS.has(i.classification.kind));
 
     for (const p of this.providers) {

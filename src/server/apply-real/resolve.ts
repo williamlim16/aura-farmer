@@ -55,8 +55,8 @@ function checkUrl(raw: string): URL {
   return u;
 }
 
-const GH_JOB = /https:\/\/(?:job-boards|boards)(?:\.eu)?\.greenhouse\.io\/[A-Za-z0-9_.-]+\/jobs\/\d+/g;
-const GH_EMBED = /https:\/\/(?:job-boards|boards)(?:\.eu)?\.greenhouse\.io\/embed\/job_app\?[^"'\s<>]+/g;
+const GH_JOB = /https:\/\/(?:job-boards|boards)(?:\.[a-z]{2,6})?\.greenhouse\.io\/[A-Za-z0-9_.-]+\/jobs\/\d+/g;
+const GH_EMBED = /https:\/\/(?:job-boards|boards)(?:\.[a-z]{2,6})?\.greenhouse\.io\/embed\/job_app\?[^"'\s<>]+/g;
 const LEVER = /https:\/\/jobs(?:\.eu)?\.lever\.co\/[A-Za-z0-9_.-]+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 function fromEmbed(raw: string): ResolvedApplication | null {

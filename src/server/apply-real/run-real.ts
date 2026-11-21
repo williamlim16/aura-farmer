@@ -17,7 +17,10 @@ import type { DecisionProvider } from "~/lib/apply/decision/types";
 import type { CandidateProfile } from "~/lib/profile/schema";
 import type { ResumeKind } from "~/lib/resume/validate";
 import type { AutofillReport } from "~/server/apply/run";
-import { createJevProviders, createLlmProviders } from "~/server/llm/factory";
+import { ALWAYS_HUMAN_KINDS } from "~/lib/apply/types";
+import { suggestOptions } from "~/lib/apply/suggest-options";
+import type { LlmClient } from "~/lib/apply/decision/llm";
+import { createJevProviders, createLlmClient, createLlmProviders } from "~/server/llm/factory";
 import { runApplication } from "~/server/workflow/run-application";
 import { launchDemoBrowser } from "~/server/apply-demo/browser";
 import { assertPublicHost, type ResolvedApplication } from "./resolve";
@@ -127,10 +130,47 @@ function evidence(o: Awaited<ReturnType<typeof open>>, events: string[], screens
   };
 }
 
-export async function reviewApplication(input: RealRunInput): Promise<RunEvidence> {
+/**
+ * For answers the rules could not apply (not an exact option, or ambiguous), ask the LLM, if one is
+ * configured, to choose among the form's REAL options. Suggestions only: the person confirms. EEO,
+ * legal and consent questions are never sent to a model.
+ */
+export async function addAiSuggestions(report: AutofillReport, events: string[], client: LlmClient | null | undefined = undefined): Promise<void> {
+  let llm: LlmClient | null;
+  try {
+    llm = client === undefined ? createLlmClient(process.env) : client;
+  } catch (e) {
+    events.push(`AI option suggestions not enabled (${e instanceof Error ? e.message : String(e)}).`);
+    return;
+  }
+  const items = report.fields
+    .filter((f) => f.outcome === "needs_human" && f.answer && f.options?.length && !ALWAYS_HUMAN_KINDS.has(f.kind as never) && f.suggestions?.length !== 1)
+    .map((f) => ({ f, q: { id: f.id, question: f.label, answer: f.answer!, options: f.options! } }));
+  if (!items.length) return;
+  if (!llm) {
+    events.push(`AI option suggestions are off (no LLM configured); ${items.length} answer(s) were matched by rules only.`);
+    return;
+  }
+  try {
+    const got = await suggestOptions(llm, items.map((i) => i.q));
+    for (const { f } of items) {
+      const g = got.get(f.id);
+      if (g) {
+        f.suggestions = [g.option, ...(f.suggestions ?? []).filter((x) => x !== g.option)];
+        f.suggestedBy = "ai";
+      }
+    }
+    events.push(`AI option suggestions: ${got.size} of ${items.length} answer(s) matched to a real option (confirmation required).`);
+  } catch (e) {
+    events.push(`AI option suggestions failed (${e instanceof Error ? e.message.split("\n")[0] : "error"}); rules only.`);
+  }
+}
+
+export async function reviewApplication(input: RealRunInput, llm?: LlmClient | null): Promise<RunEvidence> {
   const events: string[] = [`Application page: ${input.app.applyUrl} (${input.app.ats}, ${input.app.via}).`];
   const o = await open(input, events);
   try {
+    await addAiSuggestions(o.result.report, events, llm);
     const captcha = await detectCaptcha(o.result.page!);
     if (captcha) events.push(`Note: the page uses ${captcha}. It may challenge or reject an automated submission.`);
     return evidence(o, events, o.result.screenshotPng);

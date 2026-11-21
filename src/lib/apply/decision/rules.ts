@@ -3,6 +3,7 @@
  * Never guesses: if the profile does not state the fact, it abstains (or, for
  * sensitive kinds, hands the field to the person).
  */
+import { rankOptions } from "../option-rank";
 import { skillsIn } from "~/lib/match/match";
 import type { CandidateProfile } from "~/lib/profile/schema";
 import { pickOption, pickYesNo } from "../option-match";
@@ -60,17 +61,66 @@ function contactValue(p: CandidateProfile, kind: FieldKind): { value: string; co
   }
 }
 
+/** Lists longer than this are treated as async type-ahead search results (e.g. a school list), not the full set. */
+export const ASYNC_OPTION_THRESHOLD = 100;
+const SENSITIVE_FOR_CONFIRMATION = new Set<string>(["eeo", "legal", "consent", "work_authorization", "sponsorship"]);
+
+/**
+ * Applies the person's saved/typed answer to this question using the form's
+ * real options. Used for EVERY field kind (including EEO and consent, which
+ * only ever take the person's own answer, never a model's). An answer that
+ * cannot be applied is reported with the reason and real candidate options;
+ * it is never silently dropped.
+ */
+export function decideSavedAnswer(input: DecisionInput, ctx: DecisionContext): Decision | null {
+  const { field, classification: cls } = input;
+  const saved = ctx.profile.preferences?.savedAnswers?.[normQ(field.label)];
+  if (!saved?.trim() || !field.label) return null;
+  const answer = saved.trim();
+  const human = (reason: string, suggestions: string[] = []): Decision => ({ action: "human", reason, tier: "rule", suggestions, answer });
+  const userFill = (value: string | boolean, note: string): Decision => ({ action: "fill", value, tier: "rule", confidence: 1, userProvided: true, note, ...(String(value) !== answer ? { answer } : {}) });
+
+  const hasOptions = field.control === "select" || field.control === "radio" || (field.control === "combobox" && field.options.length > 0);
+  if (!hasOptions) {
+    const d = fitToField(field, answer, 1);
+    if (d?.action === "fill") return { ...d, userProvided: true, note: "Your explicit answer" };
+    return human(`Your answer “${answer}” could not be applied to this field.`);
+  }
+
+  const asyncList = field.control === "combobox" && field.options.length >= ASYNC_OPTION_THRESHOLD;
+  const rank = rankOptions(field.options, answer);
+  const pick = (i: number) => field.options[i]!;
+  const names = rank.candidates.slice(0, 8).map(pick);
+  switch (rank.kind) {
+    case "exact":
+      return userFill(pick(rank.index), "Your selection");
+    case "close":
+      return SENSITIVE_FOR_CONFIRMATION.has(cls.kind)
+        ? human(`Please confirm: “${answer}” is most likely “${pick(rank.index)}”.`, [pick(rank.index)])
+        : userFill(pick(rank.index), `Matched your answer “${answer}” to “${pick(rank.index)}”`);
+    case "suggest":
+      if (asyncList) break; // let the page's live search decide
+      return human(`“${answer}” is not an exact option. Closest: “${pick(rank.index)}”. Confirm or choose another.`, [pick(rank.index)]);
+    case "ambiguous":
+      if (asyncList) break;
+      return human(`“${answer}” fits several options. Choose one.`, names);
+    case "none":
+      if (asyncList) break;
+      return human(`No option matches “${answer}”. Choose one of the available options.`);
+  }
+  // Long type-ahead list (the preloaded options are only the first page): type the answer into the
+  // page's search and pick from the live results; an unclear result is reported with those results.
+  return { action: "fill", value: answer, tier: "rule", confidence: 1, userProvided: true, note: "Searched the form's live list for your answer", hint: answer };
+}
+
 export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decision | null {
   const { field, classification: cls } = input;
   const p = ctx.profile;
   const prefs = p.preferences;
 
-  // A saved answer for this exact question wins for any non-sensitive field.
-  const saved = prefs.savedAnswers?.[normQ(field.label)];
-  if (saved && field.label) {
-    const d = fitToField(field, saved, 1);
-    return d?.action === "fill" ? { ...d, userProvided: true, note: "Your explicit answer" } : d;
-  }
+  // The person's own answer for this exact question wins for every field type.
+  const savedDecision = decideSavedAnswer(input, ctx);
+  if (savedDecision) return savedDecision;
 
   // A user-approved draft answer (from application preparation) for motivation questions.
   const why = prefs.savedAnswers?.["@why_company"];
