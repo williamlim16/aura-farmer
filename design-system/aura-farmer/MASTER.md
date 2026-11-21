@@ -7,7 +7,7 @@
 
 ## 1. Brand Identity & Direction
 
-- **Product:** Aura Farmer — Automated Job Application & Resume-Matched Curation Platform
+- **Product:** Aura Farmer — AI Resume & CV Auto-Tailoring and Job Tracking Platform
 - **Tone of Voice:** Sharp, calm, minimal, adaptable. No filler buzzwords or visual clutter.
 - **Visual Direction:** Dark Obsidian + Luminous Aura Accents (Editorial Glassmorphism) with full Light Mode parity.
 - **Iconography:** Lucide React (`lucide-react`), consistent `1.75px` stroke weight, `aria-hidden="true"` on decorative icons beside labels. Never use emojis as UI icons.

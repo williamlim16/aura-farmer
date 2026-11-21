@@ -172,8 +172,8 @@ export default async function ProfilePage() {
             </h1>
             <p className="text-muted-foreground max-w-2xl text-sm sm:text-base">
               Keep your personal summary, work experience, and education up to
-              date so Aura Farmer can curate tailored roles and complete
-              applications for you.
+              date so Aura Farmer can auto-tailor your resumes and CVs and help
+              you keep track of matched jobs.
             </p>
           </div>
 
@@ -266,7 +266,7 @@ export default async function ProfilePage() {
             <CardContent>
               <p className="text-muted-foreground text-xs">
                 {userEducations.length > 0
-                  ? "Academic history ready for portal auto-fill."
+                  ? "Academic history ready for resume and CV tailoring."
                   : "Add your schools, degrees, or certifications."}
               </p>
             </CardContent>
@@ -300,7 +300,7 @@ export default async function ProfilePage() {
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground text-xs">
-                  Roles matched to your background, ready to apply from one
+                  Roles matched to your background, tracked and organized in one
                   place.
                 </p>
               </CardContent>
@@ -331,8 +331,8 @@ export default async function ProfilePage() {
                 </div>
                 <CardTitle className="text-xl">Profile Checklist</CardTitle>
                 <CardDescription>
-                  Complete these sections to prepare your profile for curated
-                  job applications.
+                  Complete these sections to prepare your profile for
+                  auto-tailored resumes, CVs, and job tracking.
                 </CardDescription>
               </CardHeader>
               <CardContent>

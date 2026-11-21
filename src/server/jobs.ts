@@ -4,6 +4,8 @@ import {
   desc,
   eq,
   inArray,
+  isNull,
+  lt,
   max,
   sql,
   type AnyColumn,
@@ -11,8 +13,9 @@ import {
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
-import { jobKeywords, jobs } from "~/server/db/schema";
+import { jobKeywords, jobs, trackedJobs } from "~/server/db/schema";
 import { SOURCE_ORDER, type JobSource } from "~/server/job-boards";
+import { fetchDescriptions } from "~/server/job-descriptions";
 import { searchJobs } from "~/server/tavily";
 
 /** `excluded.<column>` — the incoming value in an ON CONFLICT DO UPDATE. */
@@ -139,12 +142,163 @@ export function getAllJobs(userId: string) {
       company: jobs.company,
       location: jobs.location,
       snippet: jobs.snippet,
+      description: jobs.description,
+      descriptionAttempts: jobs.descriptionAttempts,
       publishedAt: jobs.publishedAt,
       fetchedAt: jobs.fetchedAt,
     })
     .from(jobs)
     .where(eq(jobs.userId, userId))
     .orderBy(desc(jobs.fetchedAt), desc(jobs.publishedAt), desc(jobs.id));
+}
+
+/** Give up on a posting's description after this many failed fetches. */
+export const MAX_DESCRIPTION_ATTEMPTS = 3;
+/** Postings fetched per "Fetch descriptions" batch (keeps each request short). */
+const DESCRIPTION_BATCH = 30;
+/** Most descriptions fetched as part of one "Find jobs" run. */
+const REFRESH_DESCRIPTION_LIMIT = 150;
+
+/** Jobs that have no description yet and are still worth trying. */
+function missingDescription(userId: string, fetchedAt?: Date) {
+  return and(
+    eq(jobs.userId, userId),
+    fetchedAt ? eq(jobs.fetchedAt, fetchedAt) : undefined,
+    isNull(jobs.description),
+    lt(jobs.descriptionAttempts, MAX_DESCRIPTION_ATTEMPTS),
+  );
+}
+
+/**
+ * Fetch descriptions for the next batch of the user's jobs that don't have
+ * one, newest first. Call repeatedly until `remaining` is 0 (or a batch
+ * makes no progress). A posting that loads without a description (expired)
+ * is given up on immediately; one that fails to load is retried on later
+ * calls, up to MAX_DESCRIPTION_ATTEMPTS.
+ *
+ * `fetchedAt` limits it to the jobs saved by one refresh run.
+ */
+export async function fetchMissingDescriptions(
+  userId: string,
+  {
+    limit = DESCRIPTION_BATCH,
+    fetchedAt,
+  }: { limit?: number; fetchedAt?: Date } = {},
+) {
+  const batch = await db
+    .select({
+      id: jobs.id,
+      source: jobs.source,
+      url: jobs.url,
+      title: jobs.title,
+    })
+    .from(jobs)
+    .where(missingDescription(userId, fetchedAt))
+    .orderBy(asc(jobs.descriptionAttempts), desc(jobs.fetchedAt), desc(jobs.id))
+    .limit(limit);
+
+  const results = await fetchDescriptions(batch);
+
+  let found = 0;
+  await Promise.all(
+    batch.map(({ id }) => {
+      const result = results.get(id) ?? { status: "failed" as const };
+      if (result.status === "found") found++;
+      return db
+        .update(jobs)
+        .set(
+          result.status === "found"
+            ? { description: result.description }
+            : result.status === "missing"
+              ? { descriptionAttempts: MAX_DESCRIPTION_ATTEMPTS }
+              : { descriptionAttempts: sql`${jobs.descriptionAttempts} + 1` },
+        )
+        .where(and(eq(jobs.id, id), eq(jobs.userId, userId)));
+    }),
+  );
+
+  const [{ remaining } = { remaining: 0 }] = await db
+    .select({ remaining: sql<number>`count(*)::int` })
+    .from(jobs)
+    .where(missingDescription(userId));
+
+  return { attempted: batch.length, found, remaining };
+}
+
+/** Set of job IDs currently saved in the user's tracking shortlist. */
+export async function getTrackedJobIds(userId: string): Promise<Set<number>> {
+  const rows = await db
+    .select({ jobId: trackedJobs.jobId })
+    .from(trackedJobs)
+    .where(eq(trackedJobs.userId, userId));
+  return new Set(rows.map((r) => r.jobId));
+}
+
+/**
+ * Deduplicated shortlist of tracked jobs for a user, ordered most recently
+ * tracked first.
+ */
+export function getTrackedJobs(userId: string) {
+  return db
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+      url: jobs.url,
+      source: jobs.source,
+      keyword: jobs.keyword,
+      company: jobs.company,
+      location: jobs.location,
+      snippet: jobs.snippet,
+      description: jobs.description,
+      publishedAt: jobs.publishedAt,
+      fetchedAt: jobs.fetchedAt,
+      trackedAt: trackedJobs.createdAt,
+    })
+    .from(trackedJobs)
+    .innerJoin(
+      jobs,
+      and(eq(trackedJobs.jobId, jobs.id), eq(jobs.userId, userId)),
+    )
+    .where(eq(trackedJobs.userId, userId))
+    .orderBy(desc(trackedJobs.createdAt), desc(trackedJobs.id));
+}
+
+/**
+ * Adds or removes jobs from the user's tracking shortlist.
+ * Enforces ownership on `jobs` and deduplicates via `(userId, jobId)`.
+ */
+export async function setJobsTracked(
+  userId: string,
+  jobIds: number[],
+  tracked: boolean,
+) {
+  const uniqueIds = [...new Set(jobIds)];
+  if (uniqueIds.length === 0) return;
+
+  if (tracked) {
+    const owned = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.userId, userId), inArray(jobs.id, uniqueIds)));
+    if (owned.length === 0) return;
+
+    await db
+      .insert(trackedJobs)
+      .values(owned.map((row) => ({ userId, jobId: row.id })))
+      .onConflictDoNothing({
+        target: [trackedJobs.userId, trackedJobs.jobId],
+      });
+    return;
+  }
+
+  await db
+    .delete(trackedJobs)
+    .where(
+      and(
+        eq(trackedJobs.userId, userId),
+        inArray(trackedJobs.jobId, uniqueIds),
+      ),
+    );
 }
 
 /**
@@ -162,6 +316,7 @@ export async function refreshJobsForUser(userId: string) {
     return {
       saved: 0,
       added: 0,
+      descriptions: 0,
       errors: ["Add at least one job title first."],
     };
   }
@@ -217,5 +372,20 @@ export async function refreshJobsForUser(userId: string) {
     }
   }
 
-  return { saved, added, errors };
+  // Fetch descriptions for this run's jobs that don't have one yet. Jobs
+  // found before keep theirs, so a re-run only fetches the new postings.
+  // Anything that fails here is picked up by "Fetch descriptions" later.
+  let descriptions = 0;
+  if (saved > 0) {
+    try {
+      ({ found: descriptions } = await fetchMissingDescriptions(userId, {
+        limit: REFRESH_DESCRIPTION_LIMIT,
+        fetchedAt: runStartedAt,
+      }));
+    } catch (err) {
+      console.error("Fetching descriptions after refresh failed", err);
+    }
+  }
+
+  return { saved, added, descriptions, errors };
 }

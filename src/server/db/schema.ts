@@ -64,6 +64,13 @@ export const jobs = createTable(
     company: d.text(),
     location: d.text(),
     snippet: d.text(),
+    /** Full description scraped from the posting page (plain text, "• " bullets). */
+    description: d.text(),
+    /**
+     * How many times we've tried to fetch `description`. Capped so postings
+     * that have expired (or keep failing) aren't retried forever.
+     */
+    descriptionAttempts: d.smallint().default(0).notNull(),
     /** Tavily relevance score, 0–1. */
     score: d.real(),
     publishedAt: d.timestamp({ withTimezone: true }),
@@ -75,6 +82,30 @@ export const jobs = createTable(
   (t) => [
     uniqueIndex("job_user_url_idx").on(t.userId, t.url),
     index("job_user_fetched_idx").on(t.userId, t.fetchedAt),
+  ],
+).enableRLS();
+
+/**
+ * Curated shortlist of jobs a user has selected to track for tailoring
+ * their CVs and resumes. One row per (user, job).
+ */
+export const trackedJobs = createTable(
+  "tracking",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    jobId: d
+      .integer()
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [
+    uniqueIndex("tracking_user_job_idx").on(t.userId, t.jobId),
+    index("tracking_user_created_idx").on(t.userId, t.createdAt),
   ],
 ).enableRLS();
 
@@ -215,3 +246,5 @@ export type Education = typeof educations.$inferSelect;
 export type NewEducation = typeof educations.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
+export type TrackedJob = typeof trackedJobs.$inferSelect;
+export type NewTrackedJob = typeof trackedJobs.$inferInsert;

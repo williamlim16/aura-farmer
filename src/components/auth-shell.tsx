@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, FileText, MousePointerClick, Target } from "lucide-react";
+import { ArrowLeft, FileText, Sparkles, Target } from "lucide-react";
 
 import { AuraBackdrop } from "~/components/aura-backdrop";
 import { BrandLogo } from "~/components/brand-logo";
@@ -16,30 +16,30 @@ interface AuthShellProps {
 const HIGHLIGHTS = [
   {
     icon: FileText,
-    title: "Upload your resume",
+    title: "Upload your resume & CV",
     description:
-      "Turn your resume into a structured profile that powers every job match and application.",
+      "Turn your existing resume into a structured profile that powers every tailored version.",
+  },
+  {
+    icon: Sparkles,
+    title: "Auto-tailor resumes & CVs",
+    description:
+      "Automatically adapt your resume and CV to match the skills and keywords of each role.",
   },
   {
     icon: Target,
-    title: "Curated job list",
+    title: "Keep track of your jobs",
     description:
-      "Get a personalized feed of roles aligned with your skills, experience, and career goals.",
-  },
-  {
-    icon: MousePointerClick,
-    title: "Browser-automated applying",
-    description:
-      "Apply directly from the platform while our browser automation clicks through job portals for you.",
+      "Curate, organize, and track every matched job opportunity from one clean workspace.",
   },
 ] as const;
 
 /** Editorial split-screen layout shared across all Aura Farmer auth routes. */
 export function AuthShell({
   children,
-  eyebrow = "Aura Farmer Auto-Apply",
-  headline = "Put your job applications on autopilot.",
-  subcopy = "Upload your resume, review a curated list of matched roles, and let browser automation click through job portals for you.",
+  eyebrow = "Aura Farmer Tailor & Track",
+  headline = "Auto-tailor your resumes and keep track of every job.",
+  subcopy = "Upload your resume, automatically tailor your CV for matched roles, and keep track of every job opportunity in one place.",
 }: AuthShellProps) {
   return (
     <div className="relative flex min-h-svh flex-col lg:grid lg:grid-cols-[1.05fr_1fr]">

@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Command,
   FileText,
-  MousePointerClick,
   Sparkles,
   Target,
 } from "lucide-react";
@@ -31,21 +30,21 @@ const CAPABILITIES = [
     label: "01 · Resume Ingest",
     title: "Upload your resume once",
     description:
-      "Drop in your resume and let Aura Farmer extract your skills, work history, and target roles into a structured candidate profile.",
+      "Drop in your resume or CV and let Aura Farmer extract your skills, work history, and education into a structured candidate profile.",
+  },
+  {
+    icon: Sparkles,
+    label: "02 · Auto-Tailoring",
+    title: "Auto-tailor resumes & CVs",
+    description:
+      "Automatically tailor your resume and CV for each opportunity to highlight the exact skills, keywords, and achievements the role demands.",
   },
   {
     icon: Target,
-    label: "02 · Smart Curation",
-    title: "Curated jobs that fit you",
+    label: "03 · Job Tracker",
+    title: "Curate & keep track of jobs",
     description:
-      "We continuously curate and rank open roles tailored to your background so you only spend time on relevant opportunities.",
-  },
-  {
-    icon: MousePointerClick,
-    label: "03 · Browser Automation",
-    title: "Direct portal auto-apply",
-    description:
-      "Apply directly through the platform while our automated browser agent clicks through job portals, fills fields, and submits applications for you.",
+      "Discover matched roles across job boards and keep track of every job opportunity, tailored CV version, and search keyword in one place.",
   },
 ] as const;
 
@@ -57,16 +56,16 @@ const PREVIEW_MODULES = [
     status: "Ready",
   },
   {
-    icon: Target,
-    title: "2. Curated Matches",
-    meta: "Tailored roles ranked for you",
-    status: "Matched",
+    icon: Sparkles,
+    title: "2. Auto-Tailor CV",
+    meta: "Resumes tailored to each role",
+    status: "Tailored",
   },
   {
-    icon: MousePointerClick,
-    title: "3. Browser Auto-Apply",
-    meta: "Portal forms filled & clicked",
-    status: "Automated",
+    icon: Target,
+    title: "3. Job Tracker",
+    meta: "Matched jobs saved & tracked",
+    status: "Tracked",
   },
 ] as const;
 
@@ -156,20 +155,23 @@ export default async function HomePage() {
                 <span>
                   {user
                     ? `Signed in as ${user.email ?? "authenticated user"}`
-                    : "Automated Job Application Platform"}
+                    : "AI Resume & CV Tailoring + Job Tracker"}
                 </span>
               </Badge>
             </div>
 
             <h1 className="font-heading text-4xl leading-[1.08] font-semibold tracking-tight text-balance text-foreground sm:text-5xl md:text-6xl">
-              Upload your resume. We curate and{" "}
-              <span className="text-aura-gradient">auto-apply for you</span>.
+              Auto-tailor your resumes &amp; CVs.{" "}
+              <span className="text-aura-gradient">
+                Keep track of every job
+              </span>
+              .
             </h1>
 
             <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Drop in your resume to get a personalized list of roles matched to
-              your experience—then apply directly through Aura Farmer while our
-              browser automation clicks through job portals on your behalf.
+              Drop in your resume to curate roles matched to your experience,
+              automatically tailor your resume and CV for each opportunity, and
+              keep track of every job in one organized workspace.
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3.5">
@@ -190,7 +192,7 @@ export default async function HomePage() {
                     href="/auth/sign-up"
                     className={buttonVariants({ variant: "default", size: "lg" })}
                   >
-                    Start auto-applying
+                    Start tailoring &amp; tracking
                     <ArrowRight aria-hidden="true" className="size-4" />
                   </Link>
                   <Link
@@ -223,12 +225,12 @@ export default async function HomePage() {
                     className="size-2.5 rounded-full bg-border"
                   />
                   <span className="ml-2 font-mono text-xs text-muted-foreground">
-                    aura-farmer / auto-apply-pipeline
+                    aura-farmer / tailor-and-track
                   </span>
                 </div>
                 <div className="hidden items-center gap-1.5 rounded-md border border-border/80 bg-background/60 px-2.5 py-1 font-mono text-[11px] text-muted-foreground sm:inline-flex">
                   <Command aria-hidden="true" className="size-3" />
-                  <span>Browser agent active</span>
+                  <span>CV tailoring active</span>
                 </div>
               </div>
 
@@ -273,12 +275,12 @@ export default async function HomePage() {
               How It Works
             </Badge>
             <h2 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              From resume upload to submitted applications—on autopilot.
+              From base resume to tailored CVs and tracked jobs—in one place.
             </h2>
             <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Skip repetitive portal forms and endless job boards. Aura Farmer
-              pairs resume-driven job curation with real browser automation so
-              you can apply without the manual grind.
+              Stop rewriting your resume from scratch or losing roles across
+              scattered tabs. Aura Farmer auto-tailors your resumes and CVs to
+              each job description and keeps track of every role you pursue.
             </p>
           </div>
 
@@ -321,13 +323,13 @@ export default async function HomePage() {
               <div className="max-w-xl space-y-2">
                 <h2 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
                   {user
-                    ? "Your auto-apply dashboard is ready."
-                    : "Ready to put your job search on autopilot?"}
+                    ? "Your resume & job tracker is ready."
+                    : "Ready to auto-tailor your CV and track your jobs?"}
                 </h2>
                 <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
                   {user
-                    ? "Jump straight into your dashboard to manage your resume, curated jobs, and automated applications."
-                    : "Create an account, upload your resume, and start applying to curated roles directly through the platform."}
+                    ? "Jump straight into your workspace to manage your profile, tailored resumes and CVs, and tracked jobs."
+                    : "Create an account, upload your resume, and start auto-tailoring your CVs while keeping track of every matched role."}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -373,7 +375,7 @@ export default async function HomePage() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 py-6 text-xs text-muted-foreground sm:flex-row sm:px-8">
           <BrandLogo href="/" />
           <p className="font-mono">
-            Aura Farmer · Resume-curated jobs &amp; browser-automated applications
+            Aura Farmer · Auto-tailored resumes, CVs &amp; tracked jobs
           </p>
         </div>
       </footer>
