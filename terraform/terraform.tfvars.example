@@ -2,26 +2,15 @@ project_name = "aura-farmer"
 environment  = "dev"
 aws_region   = "ap-southeast-2"
 
-# Optional override for the S3 bucket name (leave commented out to auto-generate with AWS Account ID)
-# resume_bucket_name = "aura-farmer-dev-resumes-custom"
-
-# Automatically delete uploaded resume files after 7 days (set to 0 to disable)
-resume_retention_days    = 7
-enable_bucket_versioning = false
-force_destroy_bucket     = false
-
-# Allowed origins for direct browser-to-S3 presigned URL uploads
-cors_allowed_origins = [
-  "http://localhost:3000",
-]
+# AWS Credentials for Terraform (optional here if exported as AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in your shell)
+# Note: terraform.tfvars is gitignored so your keys will not be committed.
+# aws_access_key_id     = "AKIA..."
+# aws_secret_access_key = "your-secret-access-key"
+# aws_session_token     = null # Only needed for temporary STS/SSO credentials
 
 # Create a dedicated least-privilege IAM user + access key for the Next.js app
 create_app_iam_user   = true
 create_app_access_key = true
-
-# Provision SNS + SQS + IAM Service Role for multi-page PDF asynchronous Textract jobs
-enable_async_notifications    = true
-sqs_message_retention_seconds = 86400
 
 tags = {
   Owner = "aura-farmer"
