@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><title>App page stand-in (tests)</title></head>
+<body><p id="ack">waiting</p>
+<script>
+window.addEventListener("message", (e) => { if (e.data && e.data.type === "aura-farmer:fill-plan-received") document.getElementById("ack").textContent = "received:" + e.data.applicationId; });
+setTimeout(() => window.postMessage({ type: "aura-farmer:fill-plan", plan: JSON.parse(decodeURIComponent(location.hash.slice(1))) }, location.origin), 300);
+</script></body></html>

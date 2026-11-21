@@ -163,3 +163,7 @@ export type Education = typeof educations.$inferSelect;
 export type NewEducation = typeof educations.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
+
+// Resume -> profile -> application workflow tables (feat/apply-engine).
+// Reuses the resumes table above; see apply-schema.ts.
+export * from "./apply-schema";

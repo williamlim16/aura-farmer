@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Aura Farmer handoff (dev)",
+  "version": "0.1.0",
+  "description": "Fills a job application in your own browser from answers you reviewed in Aura Farmer. Never submits.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

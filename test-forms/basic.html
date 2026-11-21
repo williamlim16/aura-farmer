@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Basic application (synthetic)</title></head>
+<body>
+<h1>Software Engineer — Example Corp (synthetic fixture)</h1>
+<form id="app" method="post" action="/submit">
+  <label for="fn">First name *</label><input id="fn" name="first_name" autocomplete="given-name" required>
+  <label for="ln">Last name *</label><input id="ln" name="last_name" autocomplete="family-name" required>
+  <label for="em">Email *</label><input id="em" name="email" type="email" required>
+  <label for="ph">Phone</label><input id="ph" name="phone" type="tel">
+  <label for="li">LinkedIn profile</label><input id="li" name="linkedin" type="url">
+  <label for="gh">GitHub URL</label><input id="gh" name="github" type="url">
+  <label for="cv">Resume/CV *</label><input id="cv" name="resume" type="file" accept=".pdf,.docx" required>
+  <label for="loc">Location (city)</label><input id="loc" name="location">
+  <label for="yrs">Years of experience</label>
+  <select id="yrs" name="years"><option value="">Select…</option><option>0-2</option><option>3-5</option><option>6-9</option><option>10+</option></select>
+  <button type="submit">Submit application</button>
+</form>
+</body></html>

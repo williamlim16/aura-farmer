@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aura Farmer: local demo</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Aura Farmer <span class="tag">local demo</span></h1>
+      <p class="muted">Synthetic data · in-memory storage · local test forms only · <strong>never submits</strong></p>
+    </div>
+    <button id="reset" class="secondary" type="button">Start over</button>
+  </header>
+
+  <nav id="steps" aria-label="Progress">
+    <span data-step="1" class="active">1. Resume</span>
+    <span data-step="2">2. Review profile</span>
+    <span data-step="3">3. Choose form</span>
+    <span data-step="4">4. Review application</span>
+  </nav>
+
+  <main>
+    <!-- Step 1 -->
+    <section id="step-1" class="card">
+      <h2>1. Upload a resume</h2>
+      <p class="muted">PDF or DOCX, up to 5 MB. Don't have one? Download a synthetic sample:
+        <a href="/api/sample-resume.pdf">sample PDF</a> · <a href="/api/sample-resume.docx">sample DOCX</a>.
+        Please don't upload a real person's resume; this demo is for synthetic data.</p>
+      <form id="upload-form">
+        <input type="file" id="resume-file" name="resume" accept=".pdf,.docx">
+        <button type="submit" id="upload-btn">Upload and extract</button>
+      </form>
+      <p id="upload-status" role="status"></p>
+    </section>
+
+    <!-- Step 2 -->
+    <section id="step-2" class="card" hidden>
+      <h2>2. Review your profile</h2>
+      <p class="muted">Check what was extracted. Badges show where each value came from. Anything you edit becomes <span class="badge user">you</span> and is treated as confirmed.
+        Application preferences are never guessed from the resume. Fill them in here, or those questions will be left for you.</p>
+      <div id="missing" class="notice" hidden></div>
+      <form id="profile-form">
+        <h3>Contact</h3>
+        <div id="contact-fields" class="grid"></div>
+        <h3>Background</h3>
+        <label>Summary <textarea name="summary" rows="3"></textarea></label>
+        <div class="grid">
+          <label>Total years of experience <input name="totalYearsExperience" inputmode="numeric"></label>
+          <label class="span2">Skills (comma-separated) <input name="skills"></label>
+        </div>
+        <h4>Experience</h4>
+        <div id="experience-rows"></div>
+        <button type="button" class="secondary small" id="add-exp">+ Add role</button>
+        <h4>Education</h4>
+        <div id="education-rows"></div>
+        <button type="button" class="secondary small" id="add-edu">+ Add education</button>
+        <h3>Application preferences <span class="muted small">(only you can set these)</span></h3>
+        <div class="grid">
+          <label>Work authorisation: country <input name="workAuthCountry" placeholder="e.g. Australia"></label>
+          <label>Authorised to work there?
+            <select name="workAuthorized"><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+          <label>Need visa sponsorship?
+            <select name="needsSponsorship"><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+          <label>Salary expectation <input name="salaryExpectation" placeholder="e.g. 150000"></label>
+          <label>Notice period <input name="noticePeriod" placeholder="e.g. 4 weeks"></label>
+          <label>Earliest start date <input name="earliestStartDate"></label>
+          <label>Willing to relocate?
+            <select name="willingToRelocate"><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+          <label>How you usually find jobs <input name="referralSource" placeholder="e.g. LinkedIn"></label>
+        </div>
+        <div id="profile-errors" class="error" role="alert" hidden></div>
+        <button type="submit" id="save-profile">Save profile and continue</button>
+        <span id="profile-status" class="muted" role="status"></span>
+      </form>
+    </section>
+
+    <!-- Step 3 -->
+    <section id="step-3" class="card" hidden>
+      <h2>3. Choose a local test form</h2>
+      <p class="muted">Only synthetic forms served by this demo. The browser is blocked from reaching any other site.</p>
+      <div id="form-list"></div>
+      <fieldset class="options">
+        <legend>Decision tiers</legend>
+        <label><input type="radio" name="llm" value="none" checked> Rules only (no model)</label>
+        <label><input type="radio" name="llm" value="mock"> Rules + <strong>mock</strong> LLM fallback (scripted, no API calls)</label>
+      </fieldset>
+      <label class="inline"><input type="checkbox" id="headed"> Show the browser window while filling (opens Chromium on this machine; it stays open for you to inspect, and submitting is still blocked)</label>
+      <div><button id="run-btn" type="button">Run autofill</button> <span id="run-status" class="muted" role="status"></span></div>
+    </section>
+
+    <!-- Step 4 -->
+    <section id="step-4" class="card" hidden>
+      <h2>4. Review the application</h2>
+      <p id="nothing-submitted" class="ok"></p>
+      <div id="summary" class="stats"></div>
+      <div class="filters">
+        Show:
+        <label><input type="radio" name="filter" value="all" checked> All</label>
+        <label><input type="radio" name="filter" value="filled"> Filled automatically</label>
+        <label><input type="radio" name="filter" value="human"> Needs you</label>
+        <label><input type="radio" name="filter" value="problem"> Errors / mismatches</label>
+      </div>
+      <table id="fields-table">
+        <thead><tr><th>Field</th><th>Detected as</th><th>Decided by</th><th>Result</th><th>Value / reason</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <details>
+        <summary>Screenshot of the filled form (not submitted)</summary>
+        <img id="screenshot" alt="Screenshot of the filled test form">
+      </details>
+      <details>
+        <summary>Raw report (JSON)</summary>
+        <pre id="raw"></pre>
+      </details>
+      <button type="button" class="secondary" id="back-to-forms">Try another form</button>
+      <button type="button" class="secondary" id="back-to-profile">Edit profile</button>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -60,3 +60,9 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# local benchmark output
+/bench-results
+# local dev data (file storage, dev database)
+/.data
+/demo-resume.pdf

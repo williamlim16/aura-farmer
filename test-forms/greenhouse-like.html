@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Greenhouse-style application (synthetic)</title>
+<style>body{font-family:system-ui;max-width:680px;margin:24px auto}.field{margin:12px 0}label{display:block}.req{color:#c00}.sel{position:relative}[role=listbox]{border:1px solid #ccc;list-style:none;margin:0;padding:0}[role=option]{padding:4px;cursor:pointer}.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}[hidden]{display:none!important}</style></head>
+<body><h1>Senior Engineer (synthetic Greenhouse-style form)</h1>
+<form id="application_form" method="post" action="/submit">
+  <div class="field"><label for="first_name">First Name <span class="req">*</span></label><input id="first_name" name="job_application[first_name]" type="text" aria-required="true"></div>
+  <div class="field"><label for="last_name">Last Name <span class="req">*</span></label><input id="last_name" name="job_application[last_name]" type="text" aria-required="true"></div>
+  <div class="field"><label for="email">Email <span class="req">*</span></label><input id="email" name="job_application[email]" type="text" aria-required="true"></div>
+  <div class="field"><label for="phone">Phone</label><input id="phone" name="job_application[phone]" type="text"></div>
+  <div class="field"><label id="resume-label">Resume/CV <span class="req">*</span></label>
+    <button type="button" onclick="document.getElementById('resume').click()">Attach</button> <button type="button">Dropbox</button>
+    <input id="resume" class="visually-hidden" type="file" name="job_application[resume]" accept=".pdf,.doc,.docx" aria-labelledby="resume-label"></div>
+  <div class="field"><label for="q_linkedin">LinkedIn Profile</label><input id="q_linkedin" name="job_application[answers_attributes][0][text_value]" type="text"></div>
+  <div class="field"><label id="q1-label">Are you legally authorized to work in Australia? <span class="req">*</span></label><div class="sel" data-combo="q1" data-options="Yes|No"></div></div>
+  <div class="field"><label id="q2-label">Will you now or in the future require sponsorship? <span class="req">*</span></label><div class="sel" data-combo="q2" data-options="Yes|No"></div></div>
+  <div class="field"><label for="q3">How did you hear about this job?</label><select id="q3" name="job_application[answers_attributes][3][answer_selected_options_attributes][0][question_option_id]"><option value="">Please select</option><option value="11">LinkedIn</option><option value="12">Referral</option><option value="13">Other</option></select></div>
+  <div class="field"><label for="q4">Why are you interested in this role?</label><textarea id="q4" name="job_application[answers_attributes][4][text_value]"></textarea></div>
+  <h2>U.S. Equal Employment Opportunity Information (voluntary)</h2>
+  <div class="field"><label for="gender">Gender</label><select id="gender" name="gender"><option value="">Please select</option><option>Male</option><option>Female</option><option>Decline to self-identify</option></select></div>
+  <button type="submit">Submit Application</button>
+</form>
+<script>
+document.querySelectorAll("[data-combo]").forEach((root) => {
+  const k = root.dataset.combo, opts = root.dataset.options.split("|");
+  root.innerHTML = '<input role="combobox" aria-labelledby="' + k + '-label" aria-controls="' + k + '-list" aria-expanded="false" autocomplete="off" name="' + k + '_search"><span data-value></span><ul role="listbox" id="' + k + '-list" hidden></ul><input type="hidden" name="' + k + '">';
+  const input = root.querySelector("input"), list = root.querySelector("ul"), shown = root.querySelector("[data-value]"), hid = root.querySelector("input[type=hidden]");
+  const open = () => { list.innerHTML = opts.filter((o) => o.toLowerCase().startsWith(input.value.toLowerCase())).map((o) => '<li role="option">' + o + '</li>').join(""); list.hidden = false; };
+  input.addEventListener("mousedown", open); input.addEventListener("input", open); input.addEventListener("keydown", (e) => { if (e.key === "Escape") list.hidden = true; if (e.key === "Enter") e.preventDefault(); });
+  list.addEventListener("mousedown", (e) => { const li = e.target.closest("[role=option]"); if (!li) return; e.preventDefault(); hid.value = shown.textContent = li.textContent; input.value = ""; list.hidden = true; });
+});
+</script></body></html>

@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Dynamic form (synthetic)</title></head>
+<body>
+<form id="app" method="post" action="/submit">
+  <label for="em">Email</label><input id="em" type="email" name="email" required>
+  <label for="src">How did you hear about us?</label>
+  <select id="src" name="source"><option value="">Choose</option><option>LinkedIn</option><option>Referral</option><option>Company website</option></select>
+  <div id="ref" hidden><label for="refname">Referrer's full name</label><input id="refname" name="referrer"></div>
+  <div id="late"></div>
+  <button type="submit">Apply</button>
+</form>
+<script>
+  document.getElementById('src').addEventListener('change', e => {
+    document.getElementById('ref').hidden = e.target.value !== 'Referral';
+  });
+  // A section that renders after a delay, like a lazy-loaded React step.
+  setTimeout(() => {
+    document.getElementById('late').innerHTML =
+      '<label for="ph">Phone number</label><input id="ph" type="tel" name="phone" required>';
+  }, 300);
+  // A controlled input that rejects values set without an input event.
+  const em = document.getElementById('em');
+  em.addEventListener('input', () => em.dataset.touched = '1');
+</script>
+</body></html>
