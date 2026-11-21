@@ -4,6 +4,10 @@ import { formatJobRows } from "~/components/jobs/format-job-rows";
 import { JobsTable } from "~/components/jobs/jobs-table";
 import { requireUser } from "~/server/auth";
 import { getKeywords, getTrackedJobs } from "~/server/jobs";
+import { getTailoredResumeStatuses } from "~/server/tailored-resumes";
+
+// Tailoring (server action on this page) calls an LLM and a LaTeX compiler.
+export const maxDuration = 300;
 
 export const metadata: Metadata = {
   title: "Job Tracking",
@@ -13,13 +17,14 @@ export const metadata: Metadata = {
 
 export default async function TrackingJobsPage() {
   const user = await requireUser();
-  const [jobs, keywords] = await Promise.all([
+  const [jobs, keywords, tailored] = await Promise.all([
     getTrackedJobs(user.id),
     getKeywords(user.id),
+    getTailoredResumeStatuses(user.id),
   ]);
   const trackedKeywords = new Set(keywords.map((k) => k.keyword));
   const trackedJobIds = new Set(jobs.map((j) => j.id));
-  const rows = formatJobRows(jobs, trackedKeywords, trackedJobIds);
+  const rows = formatJobRows(jobs, trackedKeywords, trackedJobIds, tailored);
 
   return (
     <>

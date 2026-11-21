@@ -13,6 +13,10 @@ import {
   removeKeyword,
   setJobsTracked,
 } from "~/server/jobs";
+import {
+  recompileTailoredResume,
+  tailorResumeForJob,
+} from "~/server/tailored-resumes";
 
 export interface ActionState {
   ok: boolean;
@@ -158,6 +162,59 @@ export async function fetchDescriptionsAction(): Promise<DescriptionsState> {
       found: 0,
       remaining: -1,
       progressed: false,
+    };
+  }
+}
+
+export interface TailorActionState extends ActionState {
+  /** True when a PDF is now available (false: only the .tex was produced). */
+  pdf: boolean;
+}
+
+const jobIdSchema = z.number().int().positive();
+
+/** Tailors the user's resume to one tracked job (LLM + one PDF compile). */
+export async function tailorResumeAction(
+  jobId: number,
+): Promise<TailorActionState> {
+  const user = await requireUser();
+  const parsed = jobIdSchema.safeParse(jobId);
+  if (!parsed.success)
+    return { ok: false, pdf: false, message: "Invalid job." };
+
+  try {
+    const result = await tailorResumeForJob(user, parsed.data);
+    revalidatePath("/jobs/tracking");
+    return { pdf: false, ...result };
+  } catch (err) {
+    console.error("tailorResumeAction failed", err);
+    return {
+      ok: false,
+      pdf: false,
+      message: "Couldn't tailor your resume. Please try again.",
+    };
+  }
+}
+
+/** Retries only the PDF compile for an already-tailored resume. */
+export async function compileTailoredResumeAction(
+  jobId: number,
+): Promise<TailorActionState> {
+  const user = await requireUser();
+  const parsed = jobIdSchema.safeParse(jobId);
+  if (!parsed.success)
+    return { ok: false, pdf: false, message: "Invalid job." };
+
+  try {
+    const result = await recompileTailoredResume(user.id, parsed.data);
+    revalidatePath("/jobs/tracking");
+    return { pdf: false, ...result };
+  } catch (err) {
+    console.error("compileTailoredResumeAction failed", err);
+    return {
+      ok: false,
+      pdf: false,
+      message: "Couldn't compile the PDF. Please try again.",
     };
   }
 }
