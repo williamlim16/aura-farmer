@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
 
+import { FetchDescriptionsButton } from "~/components/jobs/fetch-descriptions-button";
 import { postedLabel } from "~/components/jobs/job-card";
 import { JobsTable, type JobRow } from "~/components/jobs/jobs-table";
 import { requireUser } from "~/server/auth";
 import { JOB_SOURCES, type JobSource } from "~/server/job-boards";
-import { getAllJobs, getKeywords } from "~/server/jobs";
+import {
+  getAllJobs,
+  getKeywords,
+  MAX_DESCRIPTION_ATTEMPTS,
+} from "~/server/jobs";
 
 export const metadata: Metadata = {
   title: "All Jobs",
@@ -47,23 +52,32 @@ export default async function AllJobsPage() {
     company: job.company,
     location: job.location,
     snippet: job.snippet,
+    description: job.description,
     postedAt: job.publishedAt?.getTime() ?? null,
     postedLabel: postedLabel(job).replace(/^Posted /, ""),
     foundAt: job.fetchedAt.getTime(),
     foundLabel: foundLabel(job.fetchedAt),
     foundTitle: dateFormat.format(job.fetchedAt),
   }));
+  const missingDescriptions = jobs.filter(
+    (job) =>
+      job.description === null &&
+      job.descriptionAttempts < MAX_DESCRIPTION_ATTEMPTS,
+  ).length;
 
   return (
     <>
-      <section className="space-y-2">
-        <h1 className="font-heading text-foreground text-3xl font-semibold tracking-tight sm:text-4xl">
-          All <span className="text-aura-gradient">jobs</span>
-        </h1>
-        <p className="text-muted-foreground text-sm sm:text-base">
-          Every role we&apos;ve found for you across Seek, LinkedIn and Indeed —
-          including past searches. Search, filter and sort to dig in.
-        </p>
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <h1 className="font-heading text-foreground text-3xl font-semibold tracking-tight sm:text-4xl">
+            All <span className="text-aura-gradient">jobs</span>
+          </h1>
+          <p className="text-muted-foreground text-sm sm:text-base">
+            Every role we&apos;ve found for you across Seek, LinkedIn and Indeed
+            — including past searches. Search, filter and sort to dig in.
+          </p>
+        </div>
+        <FetchDescriptionsButton missing={missingDescriptions} />
       </section>
 
       <JobsTable rows={rows} />
