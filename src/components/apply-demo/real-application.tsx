@@ -223,7 +223,7 @@ export function RealApplication({ token }: { token: string }) {
                       <tr key={`${f.step}-${f.id}`} className="border-b align-top">
                         <td className="p-1">{f.label || f.id}{f.required ? " *" : ""}{f.control === "file" ? " (file upload)" : ""}</td>
                         <td className="p-1 break-words">{f.control === "file" ? "—" : (typed ?? f.answer ?? <span className="text-muted-foreground">from your resume</span>)}</td>
-                        <td className="p-1 break-all">{f.value === undefined || f.value === "" ? (f.control === "file" && f.outcome === "verified" ? "file attached" : "—") : String(f.value)}</td>
+                        <td className="p-1 break-all">{f.selected ?? (f.value === undefined || f.value === "" ? (f.control === "file" && f.outcome === "verified" ? "file attached" : "—") : String(f.value))}</td>
                         <td className="p-1"><span className={`rounded px-1 ${TONE[st.tone]}`}>{st.label}</span>{conf ? <span className="text-muted-foreground"> · {conf}</span> : null}</td>
                         <td className="p-1">
                           {f.outcome !== "verified" && f.reason ? <div>{f.reason}</div> : f.note && f.note !== "Your selection" ? <div className="text-muted-foreground">{f.note}</div> : null}

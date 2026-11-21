@@ -46,7 +46,7 @@ describe("answers matched to real options", () => {
 
   it("searches the async list live for a school outside the preloaded page", async () => {
     const r = await run({ School: "University of Melbourne" });
-    expect(find(r.fields, /^School/)).toMatchObject({ outcome: "verified", value: "University of Melbourne" });
+    expect(find(r.fields, /^School/)).toMatchObject({ outcome: "verified", value: "University of Melbourne", selected: "University of Melbourne" });
   });
 
   it("reports the live results when a school search is ambiguous, instead of guessing", async () => {

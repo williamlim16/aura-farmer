@@ -29,6 +29,8 @@ export interface FieldReport {
   options?: string[];
   /** True when `options` is only the first page of a long, searchable list. */
   optionsPartial?: boolean;
+  /** What the form actually shows after filling (the ATS option really selected), read back from the page. */
+  selected?: string;
   /** The person's own answer for this question, when there was one. */
   answer?: string;
   /** Real options the person can pick instead (ranked best first). */
@@ -274,6 +276,7 @@ export async function runAutofill(
       tier: d.tier,
       outcome,
       ...(d.action === "fill" ? { value: d.value, reviewRequired: d.reviewRequired } : {}),
+      ...(d.action === "fill" && typeof back?.value === "string" && back.value !== "" ? { selected: back.value } : {}),
       ...(d.action === "human" || d.action === "skip" ? { reason: d.reason } : {}),
       ...(a.fillErr ? { reason: a.fillErr } : {}),
       ...(reason ? { reason } : {}),

@@ -13,6 +13,8 @@ export interface ReportField {
   tier: string;
   outcome: string;
   value?: string | boolean;
+  /** The option/value the form actually shows after filling (read back). */
+  selected?: string;
   reason?: string;
   step: number;
   options?: string[];
