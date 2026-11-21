@@ -1,5 +1,8 @@
-Next Steps for the Table:
-1. Add job description column
-2. Add a checkbox to choose to tailor resume for that job (using information from the profile and job description)
-	tailor(job_description, user_profile, resume_template_latex) -> LLM prompt engineering -> result.tex -> pdf
-3. Resume will then be stored on the database, and be persistently downloadable as a PDF
+Location: Brisbane
+Size: Any size, maybe 51-200 people
+Work type: Full-time, permanent ideally, but any is fine
+Culture: Cross-functional, friendly, diverse, eager for upskilling, welcoming to beginners
+Values: Caring, Kind, Encouraging, Accountable, Responsible, High importance placed on Ethics
+Industry: Any industry, ideally just tech industries probably
+Role: Any tech role, like data analyst, software engineer, backend engineer, data engineer
+Company type: Any type, both corporate or  start up

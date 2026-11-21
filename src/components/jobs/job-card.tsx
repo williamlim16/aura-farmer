@@ -3,7 +3,7 @@ import { ExternalLink } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { JOB_SOURCES, RECENT_DAYS, type JobSource } from "~/server/job-boards";
+import { RECENT_DAYS, sourceLabel } from "~/server/job-boards";
 
 export interface JobCardData {
   title: string;
@@ -32,13 +32,13 @@ export function postedLabel(job: Pick<JobCardData, "publishedAt">): string {
 }
 
 export function JobCard({ job }: { job: JobCardData }) {
-  const sourceLabel = JOB_SOURCES[job.source as JobSource]?.label ?? job.source;
+  const label = sourceLabel(job.source);
 
   return (
     <Card size="sm" className="h-full">
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="teal">{sourceLabel}</Badge>
+          <Badge variant="teal">{label}</Badge>
           <Badge variant="outline" className="max-w-[60%] truncate">
             {job.keyword}
           </Badge>

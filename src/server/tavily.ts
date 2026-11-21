@@ -51,7 +51,9 @@ export async function extractPages(
       cache: "no-store",
     });
     if (!res.ok) {
-      throw new Error(`Tavily extract failed (${res.status}): ${await res.text()}`);
+      throw new Error(
+        `Tavily extract failed (${res.status}): ${await res.text()}`,
+      );
     }
 
     const data = (await res.json()) as TavilyExtractResponse;
@@ -61,6 +63,87 @@ export async function extractPages(
     pending = pending.filter((url) => !pages.has(urlKey(url)));
   }
   return pages;
+}
+
+export interface WebSearchResult {
+  url: string;
+  title: string;
+  /** Tavily's query-relevant extract of the page. */
+  content: string;
+  /** Full page text (markdown), when Tavily could fetch it. */
+  rawContent: string | null;
+  score: number;
+}
+
+/**
+ * Sites never used as evidence for company research: user-generated content,
+ * social feeds, and contact-data brokers whose company "facts" (headcount,
+ * revenue) are scraped estimates.
+ */
+export const LOW_QUALITY_DOMAINS = [
+  "reddit.com",
+  "quora.com",
+  "pinterest.com",
+  "facebook.com",
+  "instagram.com",
+  "tiktok.com",
+  "x.com",
+  "twitter.com",
+  "youtube.com",
+  "medium.com",
+  "zoominfo.com",
+  "rocketreach.co",
+  "signalhire.com",
+  "leadiq.com",
+  "apollo.io",
+  "craft.co",
+  "owler.com",
+  "dnb.com",
+  "theorg.com",
+];
+
+/** Web search through Tavily Search, with full page text included. */
+export async function searchWeb(
+  query: string,
+  { maxResults = 5 }: { maxResults?: number } = {},
+): Promise<WebSearchResult[]> {
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.TAVILY_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      search_depth: "advanced",
+      max_results: maxResults,
+      include_raw_content: "text",
+      exclude_domains: LOW_QUALITY_DOMAINS,
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Tavily search failed (${res.status}): ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as {
+    results?: {
+      url: string;
+      title?: string;
+      content?: string;
+      raw_content?: string | null;
+      score?: number;
+    }[];
+  };
+  return (data.results ?? []).map((r) => ({
+    url: r.url,
+    title: r.title ?? r.url,
+    content: r.content ?? "",
+    rawContent: r.raw_content ?? null,
+    score: r.score ?? 0,
+  }));
 }
 
 /**
