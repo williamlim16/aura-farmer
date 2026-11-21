@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import {
   Briefcase,
   Building2,
@@ -149,8 +149,9 @@ function formatDateRange(
   endDate: string | null,
   isCurrent: boolean,
 ): string {
-  const end = isCurrent ? "Present" : (endDate ?? "Present");
-  return `${startDate} — ${end}`;
+  if (isCurrent) return `${startDate} — Present`;
+  if (!endDate) return startDate;
+  return `${startDate} — ${endDate}`;
 }
 
 export function ProfileEditor({
@@ -202,6 +203,18 @@ export function ProfileEditor({
     null,
   );
   const [isSavingEducation, startEducationTransition] = useTransition();
+
+  useEffect(() => {
+    setProfileForm(emptyProfileState(initialProfile));
+  }, [initialProfile]);
+
+  useEffect(() => {
+    setExperienceItems(initialExperiences);
+  }, [initialExperiences]);
+
+  useEffect(() => {
+    setEducationItems(initialEducations);
+  }, [initialEducations]);
 
   const skillTags = parseSkills(profileForm.skills);
 

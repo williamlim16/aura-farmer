@@ -14,11 +14,16 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
 
-import { deleteResumeAction, uploadResumeAction } from "~/app/profile/actions";
+import {
+  autopopulateProfileFromResumeAction,
+  deleteResumeAction,
+  uploadResumeAction,
+} from "~/app/profile/actions";
 import { FormAlert } from "~/components/form-alert";
 import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
@@ -98,6 +103,11 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
   const [resumes, setResumes] = useState<Resume[]>(initialResumes);
   const [isDragging, setIsDragging] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [autopopulatingId, setAutopopulatingId] = useState<string | null>(null);
+  const [autoPopulateOnUpload, setAutoPopulateOnUpload] = useState(true);
+  const [activeAction, setActiveAction] = useState<
+    "upload" | "delete" | "autopopulate" | null
+  >(null);
   const [status, setStatus] = useState<{
     variant: "success" | "error";
     message: string;
@@ -107,6 +117,18 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
   useEffect(() => {
     setResumes(initialResumes);
   }, [initialResumes]);
+
+  const formatAutopopulateSummary = (data: {
+    fileName: string;
+    pagesProcessed: number;
+    modelUsed: string;
+    experiencesSynced: number;
+    educationsSynced: number;
+  }) => {
+    const expLabel = `${data.experiencesSynced} ${data.experiencesSynced === 1 ? "experience" : "experiences"}`;
+    const eduLabel = `${data.educationsSynced} ${data.educationsSynced === 1 ? "education entry" : "education entries"}`;
+    return `Autopopulated profile from "${data.fileName}" via Textract + Bedrock (${data.modelUsed}, ${data.pagesProcessed} ${data.pagesProcessed === 1 ? "page" : "pages"}: ${expLabel}, ${eduLabel}).`;
+  };
 
   const handleFileUpload = (file: File | undefined) => {
     if (!file || !dbAvailable || isPending) return;
@@ -140,18 +162,74 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
 
     const formData = new FormData();
     formData.append("file", file);
+    setActiveAction("upload");
 
     startTransition(async () => {
       const result = await uploadResumeAction(formData);
+      if (!result.ok) {
+        setActiveAction(null);
+        setStatus({ variant: "error", message: result.error });
+        return;
+      }
+
+      const uploadedResume = result.data;
+      setResumes((prev) => [uploadedResume, ...prev]);
+
+      if (!autoPopulateOnUpload) {
+        setActiveAction(null);
+        setStatus({
+          variant: "success",
+          message: `"${uploadedResume.fileName}" uploaded and saved.`,
+        });
+        router.refresh();
+        return;
+      }
+
+      setActiveAction("autopopulate");
+      setAutopopulatingId(uploadedResume.id);
+      const extractResult = await autopopulateProfileFromResumeAction(
+        uploadedResume.id,
+      );
+      setAutopopulatingId(null);
+      setActiveAction(null);
+
+      if (!extractResult.ok) {
+        setStatus({
+          variant: "error",
+          message: `"${uploadedResume.fileName}" uploaded, but autopopulation failed: ${extractResult.error}`,
+        });
+        router.refresh();
+        return;
+      }
+
+      setStatus({
+        variant: "success",
+        message: formatAutopopulateSummary(extractResult.data),
+      });
+      router.refresh();
+    });
+  };
+
+  const handleAutopopulate = (resume: Resume) => {
+    if (!dbAvailable || isPending) return;
+
+    setStatus(null);
+    setActiveAction("autopopulate");
+    setAutopopulatingId(resume.id);
+
+    startTransition(async () => {
+      const result = await autopopulateProfileFromResumeAction(resume.id);
+      setAutopopulatingId(null);
+      setActiveAction(null);
+
       if (!result.ok) {
         setStatus({ variant: "error", message: result.error });
         return;
       }
 
-      setResumes((prev) => [result.data, ...prev]);
       setStatus({
         variant: "success",
-        message: `"${result.data.fileName}" uploaded and saved.`,
+        message: formatAutopopulateSummary(result.data),
       });
       router.refresh();
     });
@@ -185,11 +263,13 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
     if (isPending) return;
 
     setStatus(null);
+    setActiveAction("delete");
     setDeletingId(resume.id);
 
     startTransition(async () => {
       const result = await deleteResumeAction(resume.id);
       setDeletingId(null);
+      setActiveAction(null);
 
       if (!result.ok) {
         setStatus({ variant: "error", message: result.error });
@@ -205,14 +285,15 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
     });
   };
 
-  const isUploading = isPending && deletingId === null;
+  const isUploading = isPending && activeAction === "upload";
+  const isAutopopulatingAny = isPending && activeAction === "autopopulate";
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
           <Badge variant="outline" className="font-mono uppercase">
-            Storage
+            Textract · Bedrock
           </Badge>
           <Badge
             variant={resumes.length > 0 ? "teal" : "outline"}
@@ -223,8 +304,8 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
         </div>
         <CardTitle className="text-xl">Resume / CV</CardTitle>
         <CardDescription>
-          Upload your PDF or Word resume to Supabase Storage so it is saved for
-          viewing, downloading, and automated applications.
+          Upload your PDF or Word resume to Supabase Storage, then autopopulate
+          your profile, experience, and education via AWS Textract &amp; Bedrock.
         </CardDescription>
       </CardHeader>
 
@@ -252,7 +333,7 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
           )}
         >
           <span className="border-aura-primary/25 bg-primary/10 text-aura-primary inline-flex size-10 items-center justify-center rounded-xl border">
-            {isUploading ? (
+            {isUploading || isAutopopulatingAny ? (
               <Loader2 aria-hidden="true" className="size-4 animate-spin" />
             ) : (
               <Upload aria-hidden="true" className="size-4" />
@@ -263,7 +344,9 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
             <p className="font-heading text-foreground text-sm font-medium">
               {isUploading
                 ? "Uploading resume..."
-                : "Drop your resume here or browse"}
+                : isAutopopulatingAny
+                  ? "Extracting profile with AWS Textract..."
+                  : "Drop your resume here or browse"}
             </p>
             <p className="text-muted-foreground font-mono text-[11px]">
               PDF, DOC, or DOCX · Max 10 MB
@@ -277,9 +360,24 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
             disabled={!dbAvailable || isPending}
             onClick={() => fileInputRef.current?.click()}
           >
-            {isUploading ? "Uploading..." : "Choose file"}
+            {isUploading
+              ? "Uploading..."
+              : isAutopopulatingAny
+                ? "Extracting..."
+                : "Choose file"}
           </Button>
         </div>
+
+        <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-xs select-none">
+          <input
+            type="checkbox"
+            className="border-input accent-primary focus-visible:ring-ring size-3.5 rounded focus-visible:ring-2 focus-visible:outline-none"
+            disabled={!dbAvailable || isPending}
+            checked={autoPopulateOnUpload}
+            onChange={(e) => setAutoPopulateOnUpload(e.target.checked)}
+          />
+          <span>Autopopulate profile automatically after upload</span>
+        </label>
 
         {status && (
           <FormAlert variant={status.variant} message={status.message} />
@@ -294,6 +392,7 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
           <ul className="space-y-2.5" aria-label="Uploaded resumes">
             {resumes.map((resume) => {
               const isDeleting = deletingId === resume.id;
+              const isAutopopulating = autopopulatingId === resume.id;
               return (
                 <li
                   key={resume.id}
@@ -327,6 +426,23 @@ export function ResumeCard({ initialResumes, dbAvailable }: ResumeCardProps) {
                   </div>
 
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="xs"
+                      disabled={!dbAvailable || isPending}
+                      onClick={() => handleAutopopulate(resume)}
+                    >
+                      {isAutopopulating ? (
+                        <Loader2
+                          aria-hidden="true"
+                          className="size-3 animate-spin"
+                        />
+                      ) : (
+                        <Sparkles aria-hidden="true" className="size-3" />
+                      )}
+                      {isAutopopulating ? "Populating..." : "Autopopulate"}
+                    </Button>
                     <a
                       href={`/api/resumes/${resume.id}`}
                       target="_blank"
