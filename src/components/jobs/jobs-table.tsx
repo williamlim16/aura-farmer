@@ -33,6 +33,8 @@ export interface JobRow {
   company: string | null;
   location: string | null;
   snippet: string | null;
+  /** Full description from the posting page; null until fetched. */
+  description: string | null;
   postedAt: number | null;
   postedLabel: string;
   foundAt: number;
@@ -91,7 +93,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
         (source === ALL || r.source === source) &&
         (keyword === ALL || r.keyword === keyword) &&
         (!q ||
-          [r.title, r.company, r.location, r.snippet].some((f) =>
+          [r.title, r.company, r.location, r.snippet, r.description].some((f) =>
             f?.toLowerCase().includes(q),
           )),
     );
@@ -164,7 +166,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
             type="search"
             value={query}
             onChange={(e) => resetPage(setQuery)(e.target.value)}
-            placeholder="Search title, company, location…"
+            placeholder="Search title, company, description…"
             aria-label="Search jobs"
             className="pl-9"
           />
@@ -231,6 +233,12 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
                 />
                 <th
                   scope="col"
+                  className="hidden px-3 py-3 font-mono font-medium xl:table-cell"
+                >
+                  Description
+                </th>
+                <th
+                  scope="col"
                   className="hidden px-3 py-3 font-mono font-medium sm:table-cell"
                 >
                   Board
@@ -258,7 +266,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
               {visible.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="text-muted-foreground px-5 py-12 text-center text-sm"
                   >
                     No jobs match these filters.
@@ -267,6 +275,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
               ) : (
                 visible.map((job) => {
                   const open = expanded.has(job.id);
+                  const details = job.description ?? job.snippet;
                   const detailsId = `job-${job.id}-details`;
                   return (
                     <Fragment key={job.id}>
@@ -330,12 +339,36 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
                         </td>
 
                         {/* Company */}
-                        <td className="text-foreground/90 hidden w-[22%] px-3 py-4 lg:table-cell">
+                        <td className="text-foreground/90 hidden w-[16%] px-3 py-4 lg:table-cell">
                           <span className="line-clamp-2">
                             {job.company ?? (
                               <span className="text-muted-foreground">—</span>
                             )}
                           </span>
+                        </td>
+
+                        {/* Description */}
+                        <td className="hidden w-[34%] px-3 py-4 xl:table-cell">
+                          {job.description ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(job.id)}
+                              aria-expanded={open}
+                              aria-controls={detailsId}
+                              title={
+                                open
+                                  ? "Hide description"
+                                  : "Show full description"
+                              }
+                              className="text-muted-foreground hover:text-foreground line-clamp-3 cursor-pointer text-left text-xs leading-relaxed transition-colors"
+                            >
+                              {job.description}
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">
+                              —
+                            </span>
+                          )}
                         </td>
 
                         {/* Board */}
@@ -359,7 +392,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
                         {/* Actions */}
                         <td className="py-3.5 pr-5 pl-2">
                           <div className="flex items-center justify-end gap-1">
-                            {job.snippet && (
+                            {details && (
                               <Button
                                 variant="ghost"
                                 size="icon-sm"
@@ -398,14 +431,14 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
                         </td>
                       </tr>
 
-                      {open && job.snippet && (
+                      {open && details && (
                         <tr
                           id={detailsId}
                           className="border-border/50 bg-muted/30 border-b"
                         >
-                          <td colSpan={6} className="px-5 pt-0 pb-5">
-                            <p className="border-aura-primary/40 text-muted-foreground max-w-3xl border-l-2 pl-3 text-xs leading-relaxed">
-                              {job.snippet}
+                          <td colSpan={7} className="px-5 pt-0 pb-5">
+                            <p className="border-aura-primary/40 text-muted-foreground max-w-3xl border-l-2 pl-3 text-xs leading-relaxed whitespace-pre-line">
+                              {details}
                             </p>
                           </td>
                         </tr>
