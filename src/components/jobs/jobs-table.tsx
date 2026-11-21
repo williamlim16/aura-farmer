@@ -31,6 +31,7 @@ import {
   setJobsTrackedAction,
   setJobTrackingStatusAction,
 } from "~/app/jobs/actions";
+import { ApplyWithAiButton } from "~/components/jobs/apply-with-ai-button";
 import { TailorResumeCell } from "~/components/jobs/tailor-resume-cell";
 import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
@@ -891,6 +892,7 @@ export function JobsTable({
                               )}
                               status={job.tailored ?? null}
                             />
+                            <ApplyWithAiButton jobId={job.id} jobTitle={job.title} />
                           </td>
                         )}
 

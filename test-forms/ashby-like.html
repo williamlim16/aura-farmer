@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Ashby-style application (synthetic)</title><style>body{font-family:system-ui;max-width:680px;margin:24px auto}.f{margin:12px 0}[role=radio][aria-checked=true]{background:#2563eb;color:#fff}</style></head>
+<body><h1>Data Engineer (synthetic Ashby-style form)</h1>
+<form method="post" action="/submit">
+  <div class="f"><label for="_systemfield_name">Name</label><input id="_systemfield_name" name="_systemfield_name" aria-required="true"></div>
+  <div class="f"><label for="_systemfield_email">Email</label><input id="_systemfield_email" name="_systemfield_email" type="email" aria-required="true"></div>
+  <div class="f"><label for="_systemfield_resume">Resume</label><input id="_systemfield_resume" type="file" style="display:none"><button type="button" onclick="document.getElementById('_systemfield_resume').click()">Upload File</button></div>
+  <div class="f"><label for="loc">Location</label><input id="loc" name="location"></div>
+  <div class="f"><p id="auth-q">Are you authorized to work in Australia?</p>
+    <div role="radiogroup" aria-labelledby="auth-q" aria-required="true">
+      <button type="button" role="radio" aria-checked="false">Yes</button><button type="button" role="radio" aria-checked="false">No</button>
+    </div></div>
+  <div class="f"><p id="spon-q">Will you require visa sponsorship?</p>
+    <div role="radiogroup" aria-labelledby="spon-q">
+      <button type="button" role="radio" aria-checked="false">Yes</button><button type="button" role="radio" aria-checked="false">No</button>
+    </div></div>
+  <button type="submit">Submit Application</button>
+</form>
+<script>
+document.querySelectorAll("[role=radiogroup]").forEach((g) => g.addEventListener("click", (e) => {
+  const b = e.target.closest("[role=radio]"); if (!b) return;
+  g.querySelectorAll("[role=radio]").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+}));
+</script></body></html>
