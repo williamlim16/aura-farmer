@@ -67,7 +67,8 @@ export function SignUpForm({
         <CardHeader className="space-y-1.5">
           <CardTitle className="text-2xl">Create your account</CardTitle>
           <CardDescription>
-            Create an account to upload your resume and start auto-applying.
+            Create an account to auto-tailor your resumes and CVs and track your
+            jobs.
           </CardDescription>
         </CardHeader>
 

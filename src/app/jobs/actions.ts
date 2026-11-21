@@ -11,6 +11,7 @@ import {
   MAX_KEYWORDS,
   refreshJobsForUser,
   removeKeyword,
+  setJobsTracked,
 } from "~/server/jobs";
 
 export interface ActionState {
@@ -84,6 +85,41 @@ export async function refreshJobsAction(): Promise<ActionState> {
   } catch (err) {
     console.error("refreshJobsAction failed", err);
     return { ok: false, message: "Job search failed. Please try again." };
+  }
+}
+
+const trackJobsSchema = z.object({
+  jobIds: z.array(z.number().int().positive()).min(1).max(200),
+  tracked: z.boolean(),
+});
+
+export async function setJobsTrackedAction(input: {
+  jobIds: number[];
+  tracked: boolean;
+}): Promise<ActionState> {
+  const user = await requireUser();
+
+  const parsed = trackJobsSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: "Invalid job selection." };
+  }
+
+  try {
+    await setJobsTracked(user.id, parsed.data.jobIds, parsed.data.tracked);
+    revalidatePath("/jobs", "layout");
+    revalidatePath("/tracking");
+    return {
+      ok: true,
+      message: parsed.data.tracked
+        ? "Added to tracking."
+        : "Removed from tracking.",
+    };
+  } catch (err) {
+    console.error("setJobsTrackedAction failed", err);
+    return {
+      ok: false,
+      message: "Could not update tracking list. Please try again.",
+    };
   }
 }
 

@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import {
+  Fragment,
+  useMemo,
+  useOptimistic,
+  useState,
+  useTransition,
+} from "react";
+import Link from "next/link";
 import {
   ArrowDown,
   ArrowUp,
@@ -11,10 +18,12 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  ListChecks,
   MapPin,
   Search,
 } from "lucide-react";
 
+import { setJobsTrackedAction } from "~/app/jobs/actions";
 import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -30,6 +39,8 @@ export interface JobRow {
   keyword: string;
   /** False if the user has since stopped tracking this keyword. */
   keywordTracked: boolean;
+  /** True if the user has added this job to their /tracking shortlist. */
+  tracked: boolean;
   company: string | null;
   location: string | null;
   snippet: string | null;
@@ -56,7 +67,13 @@ const compare: Record<SortKey, (a: JobRow, b: JobRow) => number> = {
   found: (a, b) => a.foundAt - b.foundAt,
 };
 
-export function JobsTable({ rows }: { rows: JobRow[] }) {
+export function JobsTable({
+  rows,
+  mode = "all",
+}: {
+  rows: JobRow[];
+  mode?: "all" | "tracking";
+}) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<string>(ALL);
   const [keyword, setKeyword] = useState<string>(ALL);
@@ -66,29 +83,52 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
   });
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const [optimisticRows, applyOptimistic] = useOptimistic(
+    rows,
+    (state: JobRow[], update: { jobIds: Set<number>; tracked: boolean }) =>
+      state.map((r) =>
+        update.jobIds.has(r.id) ? { ...r, tracked: update.tracked } : r,
+      ),
+  );
+
+  const effectiveRows = useMemo(
+    () =>
+      mode === "tracking"
+        ? optimisticRows.filter((r) => r.tracked)
+        : optimisticRows,
+    [mode, optimisticRows],
+  );
+
+  const trackedCount = useMemo(
+    () => optimisticRows.filter((r) => r.tracked).length,
+    [optimisticRows],
+  );
 
   const sources = useMemo(
     () =>
       countBy(
-        rows,
+        effectiveRows,
         (r) => r.source,
         (r) => r.sourceLabel,
       ),
-    [rows],
+    [effectiveRows],
   );
   const keywords = useMemo(
     () =>
       countBy(
-        rows,
+        effectiveRows,
         (r) => r.keyword,
         (r) => r.keyword,
       ),
-    [rows],
+    [effectiveRows],
   );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = rows.filter(
+    const list = effectiveRows.filter(
       (r) =>
         (source === ALL || r.source === source) &&
         (keyword === ALL || r.keyword === keyword) &&
@@ -102,7 +142,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
     return list.sort(
       (a, b) => sign * compare[sort.key](a, b) || compare.found(b, a),
     );
-  }, [rows, query, source, keyword, sort]);
+  }, [effectiveRows, query, source, keyword, sort]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pageCount - 1);
@@ -110,6 +150,37 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
     current * PAGE_SIZE,
     (current + 1) * PAGE_SIZE,
   );
+
+  const allVisibleTracked =
+    visible.length > 0 && visible.every((r) => r.tracked);
+  const someVisibleTracked = visible.some((r) => r.tracked);
+
+  function toggleTracked(jobIds: number[], tracked: boolean) {
+    if (jobIds.length === 0) return;
+    setActionError(null);
+    startTransition(async () => {
+      applyOptimistic({ jobIds: new Set(jobIds), tracked });
+      const result = await setJobsTrackedAction({ jobIds, tracked });
+      if (!result.ok) {
+        setActionError(result.message);
+      }
+    });
+  }
+
+  function handleToggleVisible() {
+    if (visible.length === 0) return;
+    if (allVisibleTracked) {
+      toggleTracked(
+        visible.map((r) => r.id),
+        false,
+      );
+    } else {
+      toggleTracked(
+        visible.filter((r) => !r.tracked).map((r) => r.id),
+        true,
+      );
+    }
+  }
 
   function resetPage<T>(set: (v: T) => void) {
     return (v: T) => {
@@ -136,7 +207,30 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
     });
   }
 
-  if (rows.length === 0) {
+  if (effectiveRows.length === 0) {
+    if (mode === "tracking") {
+      return (
+        <div className="border-border bg-background/45 flex flex-col items-start gap-3 rounded-xl border border-dashed p-6">
+          <span className="border-aura-primary/25 bg-primary/10 text-aura-primary inline-flex size-10 items-center justify-center rounded-xl border">
+            <ListChecks aria-hidden="true" className="size-5" />
+          </span>
+          <p className="font-heading text-foreground text-base font-medium">
+            No tracked jobs yet
+          </p>
+          <p className="text-muted-foreground max-w-md text-sm">
+            Use the checkboxes in All jobs to curate your shortlist of roles for
+            tailoring your CV and resume.
+          </p>
+          <Link
+            href="/jobs/all"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            Browse all jobs
+          </Link>
+        </div>
+      );
+    }
+
     return (
       <div className="border-border bg-background/45 flex flex-col items-start gap-3 rounded-xl border border-dashed p-6">
         <span className="border-aura-primary/25 bg-primary/10 text-aura-primary inline-flex size-10 items-center justify-center rounded-xl border">
@@ -181,7 +275,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
             active={source === ALL}
             onClick={() => resetPage(setSource)(ALL)}
             label="All boards"
-            count={rows.length}
+            count={effectiveRows.length}
           />
           {sources.map((s) => (
             <FilterChip
@@ -209,20 +303,70 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
             ))}
           </select>
         )}
+
+        {mode === "all" && (
+          <Link
+            href="/jobs/tracking"
+            className={cn(
+              "focus-visible:ring-ring inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:outline-none",
+              trackedCount > 0
+                ? "border-aura-primary/35 bg-primary/12 text-aura-primary hover:bg-primary/20"
+                : "border-border bg-card/60 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <ListChecks aria-hidden="true" className="size-3.5" />
+            <span>Tracked</span>
+            <span className="font-mono text-[11px] opacity-80">
+              ({trackedCount})
+            </span>
+          </Link>
+        )}
       </div>
 
+      {actionError && (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="border-destructive/30 bg-destructive/12 text-destructive rounded-xl border px-4 py-2.5 text-xs font-medium"
+        >
+          {actionError}
+        </div>
+      )}
+
       {/* Table */}
-      <div className="glass-surface overflow-hidden rounded-2xl">
+      <div
+        className="glass-surface overflow-hidden rounded-2xl"
+        aria-busy={isPending}
+      >
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-border/70 text-muted-foreground border-b text-left text-[11px] tracking-wider uppercase">
+                <th scope="col" className="w-10 py-3 pr-2 pl-5">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleTracked}
+                    ref={(el) => {
+                      if (el) {
+                        el.indeterminate =
+                          someVisibleTracked && !allVisibleTracked;
+                      }
+                    }}
+                    disabled={visible.length === 0}
+                    onChange={handleToggleVisible}
+                    aria-label={
+                      allVisibleTracked
+                        ? "Remove visible jobs from tracking"
+                        : "Add visible jobs to tracking"
+                    }
+                    className="accent-primary focus-visible:ring-ring size-4 cursor-pointer rounded align-middle focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </th>
                 <SortHeader
                   label="Role"
                   sortKey="title"
                   sort={sort}
                   onSort={toggleSort}
-                  className="pl-5"
                 />
                 <SortHeader
                   label="Company"
@@ -266,7 +410,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
               {visible.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="text-muted-foreground px-5 py-12 text-center text-sm"
                   >
                     No jobs match these filters.
@@ -285,8 +429,25 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
                           open && "bg-muted/30 border-b-0",
                         )}
                       >
+                        {/* Track checkbox */}
+                        <td className="w-10 py-4 pr-2 pl-5 align-top">
+                          <input
+                            type="checkbox"
+                            checked={job.tracked}
+                            onChange={() =>
+                              toggleTracked([job.id], !job.tracked)
+                            }
+                            aria-label={
+                              job.tracked
+                                ? `Remove ${job.title} from tracking`
+                                : `Add ${job.title} to tracking`
+                            }
+                            className="accent-primary focus-visible:ring-ring mt-1 size-4 cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none"
+                          />
+                        </td>
+
                         {/* Role */}
-                        <td className="min-w-56 py-4 pr-3 pl-5">
+                        <td className="min-w-56 px-3 py-4">
                           <a
                             href={job.url}
                             target="_blank"
@@ -320,22 +481,29 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
                               {job.postedLabel}
                             </span>
                           </div>
-                          <Badge
-                            variant={
-                              job.keywordTracked ? "outline" : "secondary"
-                            }
-                            className={cn(
-                              "mt-2 max-w-full truncate text-[11px]",
-                              !job.keywordTracked && "opacity-60",
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <Badge
+                              variant={
+                                job.keywordTracked ? "outline" : "secondary"
+                              }
+                              className={cn(
+                                "max-w-full truncate text-[11px]",
+                                !job.keywordTracked && "opacity-60",
+                              )}
+                              title={
+                                job.keywordTracked
+                                  ? `Found searching "${job.keyword}"`
+                                  : `Found searching "${job.keyword}" (no longer tracked)`
+                              }
+                            >
+                              {job.keyword}
+                            </Badge>
+                            {mode === "all" && job.tracked && (
+                              <Badge variant="default" className="text-[11px]">
+                                Tracked
+                              </Badge>
                             )}
-                            title={
-                              job.keywordTracked
-                                ? `Found searching "${job.keyword}"`
-                                : `Found searching "${job.keyword}" (no longer tracked)`
-                            }
-                          >
-                            {job.keyword}
-                          </Badge>
+                          </div>
                         </td>
 
                         {/* Company */}
@@ -436,7 +604,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
                           id={detailsId}
                           className="border-border/50 bg-muted/30 border-b"
                         >
-                          <td colSpan={7} className="px-5 pt-0 pb-5">
+                          <td colSpan={8} className="px-5 pt-0 pb-5">
                             <p className="border-aura-primary/40 text-muted-foreground max-w-3xl border-l-2 pl-3 text-xs leading-relaxed whitespace-pre-line">
                               {details}
                             </p>
@@ -457,8 +625,8 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
             {filtered.length === 0
               ? "0 jobs"
               : `${current * PAGE_SIZE + 1}–${Math.min((current + 1) * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
-            {filtered.length !== rows.length &&
-              ` (filtered from ${rows.length})`}
+            {filtered.length !== effectiveRows.length &&
+              ` (filtered from ${effectiveRows.length})`}
           </span>
           {pageCount > 1 && (
             <div className="flex items-center gap-1.5">

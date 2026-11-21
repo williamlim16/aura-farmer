@@ -5,7 +5,8 @@ import { LoginForm } from "~/components/login-form";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in to your Aura Farmer job automation dashboard.",
+  description:
+    "Sign in to your Aura Farmer resume tailoring and job tracking workspace.",
 };
 
 export default function Page() {
@@ -13,7 +14,7 @@ export default function Page() {
     <AuthShell
       eyebrow="Sign in"
       headline="Pick up your job search right where you left off."
-      subcopy="Sign in to review your curated job matches and track your automated browser applications."
+      subcopy="Sign in to auto-tailor your resumes and CVs and keep track of your curated job matches."
     >
       <LoginForm />
     </AuthShell>

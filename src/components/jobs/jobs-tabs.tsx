@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Rss, Table2 } from "lucide-react";
+import { ListChecks, Rss, Table2 } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 
 const TABS = [
   { href: "/jobs", label: "Feed", icon: Rss },
   { href: "/jobs/all", label: "All jobs", icon: Table2 },
+  { href: "/jobs/tracking", label: "Tracking", icon: ListChecks },
 ] as const;
 
 export function JobsTabs() {

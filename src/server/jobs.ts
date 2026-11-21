@@ -13,9 +13,9 @@ import {
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
-import { jobKeywords, jobs } from "~/server/db/schema";
-import { fetchDescriptions } from "~/server/job-descriptions";
+import { jobKeywords, jobs, trackedJobs } from "~/server/db/schema";
 import { SOURCE_ORDER, type JobSource } from "~/server/job-boards";
+import { fetchDescriptions } from "~/server/job-descriptions";
 import { searchJobs } from "~/server/tavily";
 
 /** `excluded.<column>` — the incoming value in an ON CONFLICT DO UPDATE. */
@@ -223,6 +223,82 @@ export async function fetchMissingDescriptions(
     .where(missingDescription(userId));
 
   return { attempted: batch.length, found, remaining };
+}
+
+/** Set of job IDs currently saved in the user's tracking shortlist. */
+export async function getTrackedJobIds(userId: string): Promise<Set<number>> {
+  const rows = await db
+    .select({ jobId: trackedJobs.jobId })
+    .from(trackedJobs)
+    .where(eq(trackedJobs.userId, userId));
+  return new Set(rows.map((r) => r.jobId));
+}
+
+/**
+ * Deduplicated shortlist of tracked jobs for a user, ordered most recently
+ * tracked first.
+ */
+export function getTrackedJobs(userId: string) {
+  return db
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+      url: jobs.url,
+      source: jobs.source,
+      keyword: jobs.keyword,
+      company: jobs.company,
+      location: jobs.location,
+      snippet: jobs.snippet,
+      description: jobs.description,
+      publishedAt: jobs.publishedAt,
+      fetchedAt: jobs.fetchedAt,
+      trackedAt: trackedJobs.createdAt,
+    })
+    .from(trackedJobs)
+    .innerJoin(
+      jobs,
+      and(eq(trackedJobs.jobId, jobs.id), eq(jobs.userId, userId)),
+    )
+    .where(eq(trackedJobs.userId, userId))
+    .orderBy(desc(trackedJobs.createdAt), desc(trackedJobs.id));
+}
+
+/**
+ * Adds or removes jobs from the user's tracking shortlist.
+ * Enforces ownership on `jobs` and deduplicates via `(userId, jobId)`.
+ */
+export async function setJobsTracked(
+  userId: string,
+  jobIds: number[],
+  tracked: boolean,
+) {
+  const uniqueIds = [...new Set(jobIds)];
+  if (uniqueIds.length === 0) return;
+
+  if (tracked) {
+    const owned = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.userId, userId), inArray(jobs.id, uniqueIds)));
+    if (owned.length === 0) return;
+
+    await db
+      .insert(trackedJobs)
+      .values(owned.map((row) => ({ userId, jobId: row.id })))
+      .onConflictDoNothing({
+        target: [trackedJobs.userId, trackedJobs.jobId],
+      });
+    return;
+  }
+
+  await db
+    .delete(trackedJobs)
+    .where(
+      and(
+        eq(trackedJobs.userId, userId),
+        inArray(trackedJobs.jobId, uniqueIds),
+      ),
+    );
 }
 
 /**
