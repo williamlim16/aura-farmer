@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
+  ArrowRight,
   CheckCircle2,
   FileText,
   Home,
@@ -140,25 +141,40 @@ export default async function ProtectedPage() {
             </CardContent>
           </Card>
 
-          <Card size="sm">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardDescription className="font-mono text-xs uppercase">
-                  Curated Jobs
-                </CardDescription>
-                <Target
-                  aria-hidden="true"
-                  className="size-4 text-aura-secondary"
-                />
-              </div>
-              <CardTitle className="text-xl">Tailored feed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Roles matched to your background, ready to apply from one place.
-              </p>
-            </CardContent>
-          </Card>
+          <Link
+            href="/protected/jobs"
+            className="group rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <Card
+              size="sm"
+              className="h-full transition-colors group-hover:border-aura-secondary/40"
+            >
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardDescription className="font-mono text-xs uppercase">
+                    Curated Jobs
+                  </CardDescription>
+                  <Target
+                    aria-hidden="true"
+                    className="size-4 text-aura-secondary"
+                  />
+                </div>
+                <CardTitle className="flex items-center gap-1.5 text-xl">
+                  Tailored feed
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                  />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">
+                  Roles matched to your background, ready to apply from one
+                  place.
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
 
           <Card size="sm">
             <CardHeader>
