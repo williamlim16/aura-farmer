@@ -1,4 +1,13 @@
-import { and, asc, eq, inArray, max, sql, type AnyColumn } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  max,
+  sql,
+  type AnyColumn,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
@@ -7,8 +16,7 @@ import { SOURCE_ORDER, type JobSource } from "~/server/job-boards";
 import { searchJobs } from "~/server/tavily";
 
 /** `excluded.<column>` — the incoming value in an ON CONFLICT DO UPDATE. */
-const excluded = (column: AnyColumn) =>
-  sql.raw(`excluded."${column.name}"`);
+const excluded = (column: AnyColumn) => sql.raw(`excluded."${column.name}"`);
 
 /** Hard cap so one refresh can't fan out into hundreds of Tavily calls. */
 export const MAX_KEYWORDS = 10;
@@ -101,7 +109,9 @@ export async function getJobFeed(userId: string, limit = 100) {
 
   const order = [
     ...SOURCE_ORDER,
-    ...[...bySource.keys()].filter((s) => !SOURCE_ORDER.includes(s as JobSource)),
+    ...[...bySource.keys()].filter(
+      (s) => !SOURCE_ORDER.includes(s as JobSource),
+    ),
   ];
   const feed: typeof rows = [];
   for (let i = 0; feed.length < rows.length; i++) {
@@ -111,6 +121,30 @@ export async function getJobFeed(userId: string, limit = 100) {
     }
   }
   return feed.slice(0, limit);
+}
+
+/**
+ * Every job ever stored for the user — including results from older searches
+ * and keywords they no longer track — most recently found first. Backs the
+ * "All jobs" table; unlike `getJobFeed`, nothing is filtered out.
+ */
+export function getAllJobs(userId: string) {
+  return db
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+      url: jobs.url,
+      source: jobs.source,
+      keyword: jobs.keyword,
+      company: jobs.company,
+      location: jobs.location,
+      snippet: jobs.snippet,
+      publishedAt: jobs.publishedAt,
+      fetchedAt: jobs.fetchedAt,
+    })
+    .from(jobs)
+    .where(eq(jobs.userId, userId))
+    .orderBy(desc(jobs.fetchedAt), desc(jobs.publishedAt), desc(jobs.id));
 }
 
 /**
@@ -125,7 +159,11 @@ export async function getJobFeed(userId: string, limit = 100) {
 export async function refreshJobsForUser(userId: string) {
   const keywords = await getKeywords(userId);
   if (keywords.length === 0) {
-    return { saved: 0, added: 0, errors: ["Add at least one job title first."] };
+    return {
+      saved: 0,
+      added: 0,
+      errors: ["Add at least one job title first."],
+    };
   }
 
   let saved = 0;
@@ -135,7 +173,10 @@ export async function refreshJobsForUser(userId: string) {
 
   // Each extract takes ~10–15s, so search all keywords at once.
   const searches = await Promise.all(
-    keywords.map(async ({ keyword }) => ({ keyword, ...(await searchJobs(keyword)) })),
+    keywords.map(async ({ keyword }) => ({
+      keyword,
+      ...(await searchJobs(keyword)),
+    })),
   );
 
   for (const { keyword, results, errors: searchErrors } of searches) {
@@ -147,7 +188,14 @@ export async function refreshJobsForUser(userId: string) {
 
       const upserted = await db
         .insert(jobs)
-        .values(unique.map((r) => ({ ...r, userId, keyword, fetchedAt: runStartedAt })))
+        .values(
+          unique.map((r) => ({
+            ...r,
+            userId,
+            keyword,
+            fetchedAt: runStartedAt,
+          })),
+        )
         .onConflictDoUpdate({
           target: [jobs.userId, jobs.url],
           set: {

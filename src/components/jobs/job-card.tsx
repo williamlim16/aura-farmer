@@ -23,7 +23,7 @@ const dateFormat = new Intl.DateTimeFormat("en-AU", {
 });
 
 /** "Posted today" / "Posted 3d ago". Indeed cards carry no date. */
-function postedLabel(job: JobCardData): string {
+export function postedLabel(job: Pick<JobCardData, "publishedAt">): string {
   if (!job.publishedAt) return `Posted within ${RECENT_DAYS}d`;
   const days = Math.floor(
     (Date.now() - job.publishedAt.getTime()) / 86_400_000,
@@ -32,8 +32,7 @@ function postedLabel(job: JobCardData): string {
 }
 
 export function JobCard({ job }: { job: JobCardData }) {
-  const sourceLabel =
-    JOB_SOURCES[job.source as JobSource]?.label ?? job.source;
+  const sourceLabel = JOB_SOURCES[job.source as JobSource]?.label ?? job.source;
 
   return (
     <Card size="sm" className="h-full">
@@ -44,7 +43,7 @@ export function JobCard({ job }: { job: JobCardData }) {
             {job.keyword}
           </Badge>
           <span
-            className="ml-auto font-mono text-[11px] text-muted-foreground"
+            className="text-muted-foreground ml-auto font-mono text-[11px]"
             title={`Last found ${dateFormat.format(job.fetchedAt)}`}
           >
             {postedLabel(job)}
@@ -54,14 +53,14 @@ export function JobCard({ job }: { job: JobCardData }) {
           {job.title}
         </CardTitle>
         {(job.company ?? job.location) && (
-          <p className="line-clamp-1 text-xs text-muted-foreground">
+          <p className="text-muted-foreground line-clamp-1 text-xs">
             {[job.company, job.location].filter(Boolean).join(" · ")}
           </p>
         )}
       </CardHeader>
       <CardContent className="flex flex-1 flex-col justify-between gap-4">
         {job.snippet && (
-          <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">
+          <p className="text-muted-foreground line-clamp-3 text-xs leading-relaxed">
             {job.snippet}
           </p>
         )}
