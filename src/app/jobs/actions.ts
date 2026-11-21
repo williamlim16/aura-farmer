@@ -12,10 +12,12 @@ import { requireUser } from "~/server/auth";
 import {
   addKeyword,
   fetchMissingDescriptions,
+  fetchMissingRecommendations,
   getKeywords,
   MAX_KEYWORDS,
   refreshJobsForUser,
   removeKeyword,
+  researchJobForUser,
   setJobsTracked,
   setJobTrackingStatus,
 } from "~/server/jobs";
@@ -197,6 +199,88 @@ export async function fetchDescriptionsAction(): Promise<DescriptionsState> {
       found: 0,
       remaining: -1,
       progressed: false,
+    };
+  }
+}
+
+export interface RecommendationsState extends ActionState {
+  /** Roles researched in this batch. */
+  found: number;
+  /** Tracked roles still missing company recommendations. */
+  remaining: number;
+  /** False when no jobs were attempted — callers should stop looping. */
+  progressed: boolean;
+}
+
+/** Run Tavily company research for the next batch of tracked jobs missing recommendations. */
+export async function fetchRecommendationsAction(): Promise<RecommendationsState> {
+  const user = await requireUser();
+
+  try {
+    const { attempted, found, remaining } = await fetchMissingRecommendations(
+      user.id,
+    );
+    revalidatePath("/jobs", "layout");
+    revalidatePath("/tracking");
+    return {
+      ok: true,
+      message: `Researched ${found} role${found === 1 ? "" : "s"}.`,
+      found,
+      remaining,
+      progressed: attempted > 0,
+    };
+  } catch (err) {
+    console.error("fetchRecommendationsAction failed", err);
+    return {
+      ok: false,
+      message: "Couldn't complete company research. Please try again.",
+      found: 0,
+      remaining: -1,
+      progressed: false,
+    };
+  }
+}
+
+const researchJobSchema = z.object({
+  jobId: z.number().int().positive(),
+});
+
+/** Run Tavily company research and recommendations for a single job posting. */
+export async function researchJobAction(input: {
+  jobId: number;
+}): Promise<ActionState & { recommendation?: string | null }> {
+  const user = await requireUser();
+
+  const parsed = researchJobSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: "Invalid job selection." };
+  }
+
+  try {
+    const { status, recommendation } = await researchJobForUser(
+      user.id,
+      parsed.data.jobId,
+    );
+    revalidatePath("/jobs", "layout");
+    revalidatePath("/tracking");
+
+    if (status === "found" && recommendation) {
+      return {
+        ok: true,
+        message: "Company research updated.",
+        recommendation,
+      };
+    }
+
+    return {
+      ok: false,
+      message: "Couldn't complete company research. Please try again.",
+    };
+  } catch (err) {
+    console.error("researchJobAction failed", err);
+    return {
+      ok: false,
+      message: "Couldn't complete company research. Please try again.",
     };
   }
 }

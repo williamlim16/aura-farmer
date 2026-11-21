@@ -71,6 +71,13 @@ export const jobs = createTable(
      * that have expired (or keep failing) aren't retried forever.
      */
     descriptionAttempts: d.smallint().default(0).notNull(),
+    /** Tavily research company overview and role-tailored application recommendations. */
+    recommendation: d.text(),
+    /**
+     * How many times we've tried to fetch `recommendation`. Capped so
+     * unsearchable postings aren't retried forever.
+     */
+    recommendationAttempts: d.smallint().default(0).notNull(),
     /** Tavily relevance score, 0–1. */
     score: d.real(),
     publishedAt: d.timestamp({ withTimezone: true }),
