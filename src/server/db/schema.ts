@@ -47,7 +47,7 @@ export const jobKeywords = createTable(
   (t) => [uniqueIndex("job_keyword_user_keyword_idx").on(t.userId, t.keyword)],
 ).enableRLS();
 
-/** Job postings found by Tavily for a user's keywords. One row per (user, url). */
+/** Job listings found on the job boards for a user's keywords. One row per (user, url). */
 export const jobs = createTable(
   "job",
   (d) => ({
@@ -61,6 +61,8 @@ export const jobs = createTable(
     url: d.text().notNull(),
     /** Numeric id from the posting URL; higher = posted more recently (per source). */
     postingId: d.bigint({ mode: "number" }),
+    company: d.text(),
+    location: d.text(),
     snippet: d.text(),
     /** Tavily relevance score, 0–1. */
     score: d.real(),
