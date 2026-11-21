@@ -22,6 +22,7 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { createClient } from "~/lib/supabase/server";
+import { applyDemoEnabled } from "~/server/apply-demo/gate";
 import { cn } from "~/lib/utils";
 
 const CAPABILITIES = [
@@ -73,6 +74,7 @@ export default async function HomePage() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   const user = data.user;
+  const showApplyDemo = applyDemoEnabled();
 
   return (
     <div className="relative flex min-h-svh flex-col overflow-x-clip">
@@ -202,6 +204,17 @@ export default async function HomePage() {
                     Sign in
                   </Link>
                 </>
+              )}
+              {/* Only on deployments with the Apply Demo enabled (never production). */}
+              {showApplyDemo && (
+                <Link
+                  href={user ? "/apply-demo" : "/auth/login?next=/apply-demo"}
+                  className={buttonVariants({ variant: "default", size: "lg" })}
+                  data-testid="try-application-autofill"
+                >
+                  Try Application Autofill
+                  <ArrowRight aria-hidden="true" className="size-4" />
+                </Link>
               )}
             </div>
           </div>
