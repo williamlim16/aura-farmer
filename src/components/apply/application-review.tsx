@@ -211,7 +211,7 @@ export function ApplicationReview({ initial }: { initial: ApplicationDTO }) {
                           <td className="py-2 pr-3"><Badge tone={f.tier}>{TIER_LABEL[f.tier]}</Badge></td>
                           <td className="py-2 break-words">
                             {displayValue(f)}
-                            {f.reviewRequired && <span className="ml-1 text-xs text-amber-700 dark:text-amber-300">AI draft: please edit</span>}
+                            {f.reviewRequired && <span className="ml-1 text-xs text-amber-700 dark:text-amber-300">{f.tier === "llm" ? "AI draft: please edit" : "Your approved answer: check it fits this form"}</span>}
                           </td>
                         </tr>
                       ))}

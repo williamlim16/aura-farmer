@@ -147,7 +147,7 @@ describe("team Next.js app: integrated apply workflow", () => {
     const filledSection = page.locator("section", { has: page.getByRole("heading", { name: /Filled automatically/ }) });
     await expect.poll(() => filledSection.getByText("Rules").count()).toBeGreaterThan(5);
     await page.locator("section", { has: page.getByRole("heading", { name: /Blocked for safety/ }) }).getByText("Gender").waitFor();
-    await page.getByText("AI draft: please edit").first().waitFor(); // mock LLM essay, flagged
+    await page.getByText(/AI draft: please edit|Your approved answer/).first().waitFor(); // drafted essay, flagged for review
     await page.getByText(/Ready for your review. Nothing was submitted./).waitFor(); // worker log
     await page.waitForFunction(() => {
       const img = document.querySelector<HTMLImageElement>("img[alt^='Screenshot']");

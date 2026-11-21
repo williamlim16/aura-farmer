@@ -66,3 +66,4 @@ terraform.rc
 # local dev data (file storage, dev database)
 /.data
 /demo-resume.pdf
+/e2e-artifacts

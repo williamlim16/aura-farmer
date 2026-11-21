@@ -94,3 +94,21 @@ describe("tailoring", () => {
     expect(text).not.toMatch(/Kubernetes|Terraform/);
   });
 });
+
+describe("inference quality (regression from a live posting)", () => {
+  it("does not infer support from filler-word overlaps", async () => {
+    const { extractResumeText: ext } = await import("~/server/resume/extract-text");
+    const { parseResumeText } = await import("~/lib/resume/parse-profile");
+    const { makeRealisticResumePdf } = await import("../helpers/realistic-resume");
+    const p = parseResumeText(await ext(await makeRealisticResumePdf(), "pdf")).profile;
+    const m = matchProfileToPosting(p, { required: [
+      "Take full ownership of ambiguous, open-ended problems and drive them to completion with minimal direction",
+      "Are a power user of agentic coding tools with deep intuition about model capabilities and limitations",
+      "Care deeply about correctness and reliability, and have raised engineering standards on teams you've been part of",
+      "Have a history of setting technical direction that others follow through design docs and design reviews",
+    ], preferred: [] });
+    const st = m.requirements.map((r) => r.status);
+    expect(st.slice(0, 3)).toEqual(["unverified", "unverified", "unverified"]);
+    expect(m.requirements[3]).toMatchObject({ status: "inferred", evidence: [expect.stringContaining("design reviews")] });
+  });
+});

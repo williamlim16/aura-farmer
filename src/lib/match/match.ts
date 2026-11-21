@@ -89,7 +89,9 @@ const SKILLS: Record<string, string[]> = {
   Salesforce: ["salesforce"],
 };
 
-const STOP = new Set("a an and or the of to in for with on at by from as is are be have has you your we our will able ability strong excellent experience experienced working knowledge understanding proven solid skills skill years year plus etc using use including include such other related relevant similar good great deep hands-on".split(" "));
+const STOP = new Set(("a an and or the of to in for with on at by from as is are be have has you your we our will able ability strong excellent experience experienced working knowledge understanding proven solid skills skill years year plus etc using use including include such other related relevant similar good great deep hands-on " +
+  // generic verbs/adjectives that say nothing about a candidate's fit
+  "about take full user users care deeply part been make help work works drive open minimal high fast know when others through ensure across within things being more most very well want love thrive environment environments teams team people problems problem complete completion direction history track record ability judgment world class").split(" "));
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const has = (text: string, alias: string) => new RegExp(`(^|[^a-z0-9+#.])${esc(alias)}($|[^a-z0-9+#])`, "i").test(text);
@@ -202,11 +204,13 @@ function assess(req: string, importance: "required" | "preferred", p: CandidateP
   }
 
   // Qualitative: word overlap only, shown as inference.
-  const words = [...new Set(lower.match(/[a-z][a-z+#.-]{3,}/g) ?? [])].filter((w) => !STOP.has(w));
-  const hits = words.filter((w) => c.text.includes(w));
-  if (hits.length >= 2) {
-    const line = c.lines.find((l) => hits.filter((h) => l.toLowerCase().includes(h)).length >= 2) ?? c.lines.find((l) => l.toLowerCase().includes(hits[0]!));
-    return { text: req, importance, status: "inferred", evidence: line ? [line] : [], note: `Related wording in your profile: ${hits.slice(0, 4).join(", ")}. This is an inference, not a verified match.` };
+  // Inference needs >= 2 substantive words (5+ letters, not generic) that occur together in ONE profile line.
+  const words = [...new Set(lower.match(/[a-z][a-z+#.-]{4,}/g) ?? [])].filter((w) => !STOP.has(w));
+  const wordIn = (l: string, w: string) => new RegExp(`\\b${esc(w)}`, "i").test(l);
+  const line = c.lines.find((l) => words.filter((w) => wordIn(l, w)).length >= 2);
+  if (line) {
+    const hits = words.filter((w) => wordIn(line, w));
+    return { text: req, importance, status: "inferred", evidence: [line], note: `Related wording in your profile: ${hits.slice(0, 4).join(", ")}. This is an inference, not a verified match.` };
   }
   return { text: req, importance, status: "unverified", evidence: [] };
 }
