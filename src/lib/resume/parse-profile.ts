@@ -195,8 +195,8 @@ export function parseResumeText(text: string, now: Date = new Date()): ParseResu
       continue;
     }
     // "Company" + "Title" + date-only line (either order of the first two).
-    const dateOnly = (k: number) => !!exp[k] && RANGE_RE.test(exp[k]!) && !stripRange(exp[k]!);
-    const plain = (k: number) => !!exp[k] && !BULLET_RE.test(exp[k]!) && !RANGE_RE.test(exp[k]!);
+    const dateOnly = (k: number) => !!exp[k] && RANGE_RE.test(exp[k]) && !stripRange(exp[k]);
+    const plain = (k: number) => !!exp[k] && !BULLET_RE.test(exp[k]) && !RANGE_RE.test(exp[k]);
     if (plain(i + 1) && dateOnly(i + 2) && (TITLE_WORD.test(line) || TITLE_WORD.test(exp[i + 1]!))) {
       const [title, company] = TITLE_WORD.test(exp[i + 1]!) && !TITLE_WORD.test(line) ? [exp[i + 1]!, line] : [line, exp[i + 1]!];
       const r = RANGE_RE.exec(exp[i + 2]!)!;
