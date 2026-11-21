@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
+import { env } from "~/env";
 import { createClient } from "~/lib/supabase/server";
 import { db } from "~/server/db";
 import {
@@ -17,9 +18,11 @@ import {
   type Resume,
   type UserProfile,
 } from "~/server/db/schema";
+import { extractResumeProfile } from "~/server/resume/resume-extractor";
 import {
   RESUME_BUCKET,
   deleteResumeObject,
+  downloadResumeObject,
   uploadResumeObject,
 } from "~/server/storage/resume-storage";
 
@@ -597,5 +600,274 @@ export async function deleteResumeAction(
       ok: false,
       error: "Could not delete resume from storage and database.",
     };
+  }
+}
+
+export interface AutopopulateProfileResult {
+  fileName: string;
+  pagesProcessed: number;
+  modelUsed: string;
+  profileUpdated: boolean;
+  experiencesSynced: number;
+  educationsSynced: number;
+}
+
+function normalizeLookupKey(first: string, second: string): string {
+  return `${first.trim().toLowerCase()}::${second.trim().toLowerCase()}`;
+}
+
+/** Extracts candidate details from an uploaded resume using AWS Textract and populates profile, experience, and education. */
+export async function autopopulateProfileFromResumeAction(
+  resumeId: string,
+): Promise<ActionResult<AutopopulateProfileResult>> {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) {
+    return {
+      ok: false,
+      error: "Please sign in again to autopopulate your profile.",
+    };
+  }
+
+  const parsedId = uuidSchema.safeParse(resumeId);
+  if (!parsedId.success) {
+    return { ok: false, error: "Invalid resume identifier." };
+  }
+
+  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) {
+    return {
+      ok: false,
+      error:
+        "AWS credentials are not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your environment.",
+    };
+  }
+
+  try {
+    const [resume] = await db
+      .select()
+      .from(resumes)
+      .where(and(eq(resumes.id, parsedId.data), eq(resumes.userId, userId)))
+      .limit(1);
+
+    if (!resume) {
+      return { ok: false, error: "Resume could not be found." };
+    }
+
+    const arrayBuffer = await downloadResumeObject({
+      bucketId: resume.bucketId,
+      storagePath: resume.storagePath,
+    });
+
+    const extracted = await extractResumeProfile({
+      buffer: Buffer.from(arrayBuffer),
+      mimeType: resume.mimeType,
+      fileName: resume.fileName,
+    });
+
+    const [existingProfileRows, existingExperiences, existingEducations] =
+      await Promise.all([
+        db
+          .select()
+          .from(userProfiles)
+          .where(eq(userProfiles.userId, userId))
+          .limit(1),
+        db
+          .select()
+          .from(experiences)
+          .where(eq(experiences.userId, userId)),
+        db
+          .select()
+          .from(educations)
+          .where(eq(educations.userId, userId)),
+      ]);
+
+    const existingProfile = existingProfileRows[0] ?? null;
+    const mergedProfileInput: PersonalProfileInput = {
+      fullName: extracted.profile.fullName ?? existingProfile?.fullName ?? "",
+      headline: extracted.profile.headline ?? existingProfile?.headline ?? "",
+      location: extracted.profile.location ?? existingProfile?.location ?? "",
+      phone: extracted.profile.phone ?? existingProfile?.phone ?? "",
+      websiteUrl:
+        extracted.profile.websiteUrl ?? existingProfile?.websiteUrl ?? "",
+      linkedinUrl:
+        extracted.profile.linkedinUrl ?? existingProfile?.linkedinUrl ?? "",
+      githubUrl: extracted.profile.githubUrl ?? existingProfile?.githubUrl ?? "",
+      summary: extracted.profile.summary ?? existingProfile?.summary ?? "",
+      skills: extracted.profile.skills ?? existingProfile?.skills ?? "",
+    };
+
+    const parsedProfile = personalProfileSchema.safeParse(mergedProfileInput);
+    if (!parsedProfile.success) {
+      return {
+        ok: false,
+        error:
+          parsedProfile.error.issues[0]?.message ??
+          "Extracted profile fields failed validation.",
+      };
+    }
+
+    await db
+      .insert(userProfiles)
+      .values({
+        userId,
+        ...parsedProfile.data,
+      })
+      .onConflictDoUpdate({
+        target: userProfiles.userId,
+        set: {
+          ...parsedProfile.data,
+          updatedAt: new Date(),
+        },
+      });
+
+    const existingExpByKey = new Map(
+      existingExperiences.map((item) => [
+        normalizeLookupKey(item.jobTitle, item.company),
+        item,
+      ]),
+    );
+
+    let experiencesSynced = 0;
+    for (const entry of extracted.experiences) {
+      const parsedExp = experienceSchema.safeParse({
+        jobTitle: entry.jobTitle,
+        company: entry.company,
+        employmentType: entry.employmentType ?? "",
+        location: entry.location ?? "",
+        startDate: entry.startDate,
+        endDate: entry.isCurrent ? "" : (entry.endDate ?? ""),
+        isCurrent: entry.isCurrent,
+        description: entry.description ?? "",
+      });
+
+      if (!parsedExp.success) {
+        continue;
+      }
+
+      const expFields = parsedExp.data;
+      const endDate = expFields.isCurrent ? null : expFields.endDate;
+      const existing = existingExpByKey.get(
+        normalizeLookupKey(expFields.jobTitle, expFields.company),
+      );
+
+      if (existing) {
+        await db
+          .update(experiences)
+          .set({
+            jobTitle: expFields.jobTitle,
+            company: expFields.company,
+            employmentType: expFields.employmentType,
+            location: expFields.location,
+            startDate: expFields.startDate,
+            endDate,
+            isCurrent: expFields.isCurrent,
+            description: expFields.description,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(eq(experiences.id, existing.id), eq(experiences.userId, userId)),
+          );
+      } else {
+        await db.insert(experiences).values({
+          userId,
+          jobTitle: expFields.jobTitle,
+          company: expFields.company,
+          employmentType: expFields.employmentType,
+          location: expFields.location,
+          startDate: expFields.startDate,
+          endDate,
+          isCurrent: expFields.isCurrent,
+          description: expFields.description,
+        });
+      }
+
+      experiencesSynced += 1;
+    }
+
+    const existingEduByKey = new Map(
+      existingEducations.map((item) => [
+        normalizeLookupKey(item.school, item.degree),
+        item,
+      ]),
+    );
+
+    let educationsSynced = 0;
+    for (const entry of extracted.educations) {
+      const parsedEdu = educationSchema.safeParse({
+        school: entry.school,
+        degree: entry.degree,
+        fieldOfStudy: entry.fieldOfStudy ?? "",
+        location: entry.location ?? "",
+        startDate: entry.startDate,
+        endDate: entry.isCurrent ? "" : (entry.endDate ?? ""),
+        isCurrent: entry.isCurrent,
+        grade: entry.grade ?? "",
+        description: entry.description ?? "",
+      });
+
+      if (!parsedEdu.success) {
+        continue;
+      }
+
+      const eduFields = parsedEdu.data;
+      const endDate = eduFields.isCurrent ? null : eduFields.endDate;
+      const existing = existingEduByKey.get(
+        normalizeLookupKey(eduFields.school, eduFields.degree),
+      );
+
+      if (existing) {
+        await db
+          .update(educations)
+          .set({
+            school: eduFields.school,
+            degree: eduFields.degree,
+            fieldOfStudy: eduFields.fieldOfStudy,
+            location: eduFields.location,
+            startDate: eduFields.startDate,
+            endDate,
+            isCurrent: eduFields.isCurrent,
+            grade: eduFields.grade,
+            description: eduFields.description,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(eq(educations.id, existing.id), eq(educations.userId, userId)),
+          );
+      } else {
+        await db.insert(educations).values({
+          userId,
+          school: eduFields.school,
+          degree: eduFields.degree,
+          fieldOfStudy: eduFields.fieldOfStudy,
+          location: eduFields.location,
+          startDate: eduFields.startDate,
+          endDate,
+          isCurrent: eduFields.isCurrent,
+          grade: eduFields.grade,
+          description: eduFields.description,
+        });
+      }
+
+      educationsSynced += 1;
+    }
+
+    revalidatePath("/profile");
+    return {
+      ok: true,
+      data: {
+        fileName: resume.fileName,
+        pagesProcessed: extracted.pagesProcessed,
+        modelUsed: extracted.modelUsed,
+        profileUpdated: true,
+        experiencesSynced,
+        educationsSynced,
+      },
+    };
+  } catch (err) {
+    console.error("Failed to autopopulate profile from resume:", err);
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Could not extract profile details from the selected resume.";
+    return { ok: false, error: message };
   }
 }
