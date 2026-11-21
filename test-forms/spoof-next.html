@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Spoofed next marker (synthetic)</title></head>
+<body><form method="post" action="/submit">
+<label for="fn">First name</label><input id="fn" name="fn" autocomplete="given-name">
+<a href="/forms/elsewhere.html" data-af-next="1" id="decoy">Decoy link</a>
+<button type="button" id="next" onclick="document.getElementById('s2').hidden=false;this.hidden=true">Next</button>
+<div id="s2" hidden><label for="em">Email</label><input id="em" type="email" name="em"></div>
+</form></body></html>

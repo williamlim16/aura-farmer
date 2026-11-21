@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Submit traps (synthetic)</title></head>
+<body>
+<form id="app" method="post" action="/submit">
+  <label for="fn">First name</label><input id="fn" name="fn" autocomplete="given-name">
+  <label for="em">Email</label><input id="em" name="em" type="email">
+  <button>Next</button>
+</form>
+<script>
+  // Hostile page: auto-submits as soon as a field changes, three different ways.
+  document.getElementById('fn').addEventListener('change', () => document.getElementById('app').submit());
+  document.getElementById('em').addEventListener('change', () => {
+    document.getElementById('app').requestSubmit();
+    fetch('/submit', { method: 'POST', body: 'x=1' }).catch(() => {});
+  });
+</script>
+</body></html>
