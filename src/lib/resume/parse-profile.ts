@@ -6,6 +6,7 @@
  * extractor can be asked for only those fields instead of the whole resume.
  * Pure function: no I/O, safe to unit test and to run on the client.
  */
+import { skillsIn } from "~/lib/match/match";
 import {
   emptyProfile,
   type CandidateProfile,
@@ -82,6 +83,12 @@ function splitRoleLine(line: string): { title: string; company: string } | null 
   return { title: m[1]!.trim(), company: m[2]!.trim() };
 }
 
+const stripRange = (l: string) => l.replace(RANGE_RE, "").replace(/[|,·•\s]+$/, "").replace(/^[|,·•\s]+/, "").trim();
+const SINGLE_YEAR_RE = /\b((?:19|20)\d{2})\b()/;
+const TITLE_WORD = /\b(engineer|developer|manager|analyst|designer|lead|intern|consultant|architect|scientist|specialist|director|officer|administrator|coordinator|associate|assistant|head|programmer|technician)\b/i;
+const DEGREE_WORD = /\b(bachelor|master|ph\.?d|doctor|diploma|certificate|associate degree|b\.?sc|m\.?sc|b\.?a\b|m\.?a\b|b\.?eng|m\.?eng|mba|honours|honors)\b/i;
+const SCHOOL_WORD = /\b(university|college|institute|school|academy|polytechnic|tafe)\b/i;
+
 export interface ParseResult {
   profile: CandidateProfile;
   /** Profile paths the parser could not fill; candidates for LLM fallback. */
@@ -134,52 +141,124 @@ export function parseResumeText(text: string, now: Date = new Date()): ParseResu
     profile.contact.lastName = sv(parts.slice(1).join(" "), 0.8);
   }
 
-  const locationLine = header.find((l) => l !== nameLine && looksLikeLocation(l));
+  // Location may share the contact line ("Sydney, NSW · email · phone"): split on separators first.
+  const headerTokens = header.filter((l) => l !== nameLine).flatMap((l) => l.split(/\s*[·•|\t]\s*|\s{2,}/)).map((t) => t.trim()).filter(Boolean);
+  const locationLine = headerTokens.find((t) => looksLikeLocation(t));
   if (locationLine) profile.contact.location = sv(locationLine.trim(), 0.7);
 
   // --- Summary ---
   if (sections.summary?.length) profile.summary = sections.summary.join(" ");
 
   // --- Experience ---
+  // Supported layouts (dates may be on the title line, the company line, or alone):
+  //   "Title, Company | Mar 2021 - Present"        "Title at Company"
+  //   "Title    Mar 2021 - Present" + "Company - City"
+  //   "Company    Mar 2021 - Present" + "Title"     (swapped when the 2nd line is the title)
+  // Wrapped bullet lines are appended to the previous bullet.
   const exp = sections.experience ?? [];
+  let lastWasBullet = false;
   for (let i = 0; i < exp.length; i++) {
     const line = exp[i]!;
     if (BULLET_RE.test(line)) {
       profile.experience.at(-1)?.bullets.push(line.replace(BULLET_RE, ""));
+      lastWasBullet = true;
       continue;
     }
-    const sameLineRange = RANGE_RE.exec(line);
-    const nextRange = exp[i + 1]?.match(RANGE_RE);
-    const isRangeOnly = sameLineRange && line.replace(RANGE_RE, "").replace(/[|,\s]/g, "") === "";
-    if (isRangeOnly) continue;
+    const range = RANGE_RE.exec(line);
+    const rest = stripRange(line);
+    if (range && !rest) {
+      // date-only line: belongs to the entry just started
+      const last = profile.experience.at(-1);
+      if (last && !last.start) Object.assign(last, { start: range[1], end: range[2] });
+      lastWasBullet = false;
+      continue;
+    }
+    const nextRange = exp[i + 1] ? RANGE_RE.exec(exp[i + 1]!) : null;
+    const nextIsDateOnly = !!nextRange && !stripRange(exp[i + 1]!);
     const role = splitRoleLine(line);
-    const range = sameLineRange ?? (nextRange && exp[i + 1]!.replace(RANGE_RE, "").replace(/[|,\s]/g, "") === "" ? nextRange : null);
-    if (role && range) {
-      profile.experience.push({ ...role, start: range[1], end: range[2], bullets: [] });
-    } else if (profile.experience.length) {
-      profile.experience.at(-1)!.bullets.push(line);
+    if (role && (range || nextIsDateOnly)) {
+      const r = range ?? nextRange!;
+      profile.experience.push({ ...role, start: r[1], end: r[2], bullets: [] });
+      lastWasBullet = false;
+      continue;
+    }
+    if (range && rest) {
+      // "Title    dates" with the company on the next non-bullet line (or swapped)
+      const next = exp[i + 1] && !BULLET_RE.test(exp[i + 1]!) && !RANGE_RE.test(exp[i + 1]!) ? exp[i + 1]! : null;
+      const second = next ? next.split(/\s+[—–|·]\s+|\s+-\s+|,\s+(?=[A-Z][a-z]+,?\s+[A-Z]{2,3}\b)/)[0]!.trim() : "";
+      let title = rest;
+      let company = second;
+      if (company && TITLE_WORD.test(company) && !TITLE_WORD.test(title)) [title, company] = [company, title];
+      profile.experience.push({ title, company, start: range[1], end: range[2], bullets: [] });
+      if (next) i++;
+      lastWasBullet = false;
+      continue;
+    }
+    // "Company" + "Title" + date-only line (either order of the first two).
+    const dateOnly = (k: number) => !!exp[k] && RANGE_RE.test(exp[k]!) && !stripRange(exp[k]!);
+    const plain = (k: number) => !!exp[k] && !BULLET_RE.test(exp[k]!) && !RANGE_RE.test(exp[k]!);
+    if (plain(i + 1) && dateOnly(i + 2) && (TITLE_WORD.test(line) || TITLE_WORD.test(exp[i + 1]!))) {
+      const [title, company] = TITLE_WORD.test(exp[i + 1]!) && !TITLE_WORD.test(line) ? [exp[i + 1]!, line] : [line, exp[i + 1]!];
+      const r = RANGE_RE.exec(exp[i + 2]!)!;
+      profile.experience.push({ title, company, start: r[1], end: r[2], bullets: [] });
+      i += 2;
+      lastWasBullet = false;
+      continue;
+    }
+    if (dateOnly(i + 1) && TITLE_WORD.test(line)) {
+      const r = RANGE_RE.exec(exp[i + 1]!)!;
+      profile.experience.push({ title: line, company: "", start: r[1], end: r[2], bullets: [] });
+      i += 1;
+      lastWasBullet = false;
+      continue;
+    }
+    // Continuation of a wrapped bullet, or free text under the current role.
+    const last = profile.experience.at(-1);
+    if (last) {
+      if (lastWasBullet && last.bullets.length) last.bullets[last.bullets.length - 1] += ` ${line}`;
+      else last.bullets.push(line);
     }
   }
 
   // --- Education ---
   const edu = sections.education ?? [];
-  for (const line of edu) {
-    if (RANGE_RE.test(line) && line.replace(RANGE_RE, "").replace(/[|,\s]/g, "") === "") {
+  for (let i = 0; i < edu.length; i++) {
+    const line = edu[i]!;
+    if (BULLET_RE.test(line)) continue;
+    const range = RANGE_RE.exec(line) ?? SINGLE_YEAR_RE.exec(line);
+    const rest = stripRange(line).replace(/\b(19|20)\d{2}\b\s*$/, "").trim();
+    if (range && !rest) {
       const last = profile.education.at(-1);
-      const r = RANGE_RE.exec(line)!;
-      if (last && !last.start) Object.assign(last, { start: r[1], end: r[2] });
+      if (last && !last.start) Object.assign(last, { start: range[1], end: range[2] ?? range[1] });
       continue;
     }
     const role = splitRoleLine(line);
-    if (role) {
-      const r = RANGE_RE.exec(line);
-      profile.education.push({ degree: role.title, institution: role.company, start: r?.[1], end: r?.[2] });
+    if (role && DEGREE_WORD.test(role.title + " " + role.company)) {
+      const [degree, institution] = DEGREE_WORD.test(role.title) ? [role.title, role.company] : [role.company, role.title];
+      profile.education.push({ degree, institution, start: range?.[1], end: range?.[2] ?? range?.[1] });
+      continue;
+    }
+    if (rest && (DEGREE_WORD.test(rest) || SCHOOL_WORD.test(rest))) {
+      // "Degree    2014 - 2017" + "University" on the next line (either order)
+      const next = edu[i + 1] && !BULLET_RE.test(edu[i + 1]!) ? stripRange(edu[i + 1]!) : "";
+      const pairOk = next && (DEGREE_WORD.test(rest) ? SCHOOL_WORD.test(next) || !DEGREE_WORD.test(next) : DEGREE_WORD.test(next));
+      const degree = DEGREE_WORD.test(rest) ? rest : pairOk ? next : rest;
+      const institution = DEGREE_WORD.test(rest) ? (pairOk ? next : "") : rest;
+      const nr = !range && edu[i + 1] ? RANGE_RE.exec(edu[i + 1]!) : null;
+      profile.education.push({ degree, institution, start: (range ?? nr)?.[1], end: (range ?? nr)?.[2] ?? range?.[1] });
+      if (pairOk) i++;
     }
   }
 
   // --- Skills ---
   const skillText = (sections.skills ?? []).map((l) => l.replace(/^[^:]{1,30}:\s*/, "")).join(",");
-  profile.skills = [...new Set(skillText.split(/\s*[,;|•·]\s*/).map((s) => s.replace(BULLET_RE, "").trim()).filter((s) => s.length > 0 && s.length <= 40))];
+  const rawSkills = skillText.split(/\s*[,;|•·]\s*|\s{2,}|\t/).map((s) => s.replace(BULLET_RE, "").trim()).filter(Boolean);
+  // A run with no separators ("Python Java SQL Excel", from tables) is split into known skills.
+  const expanded = rawSkills.flatMap((s) => {
+    const known = skillsIn(s);
+    return s.length > 25 && known.length >= 2 && s.split(/\s+/).length <= known.length * 2 + 1 ? known : [s];
+  });
+  profile.skills = [...new Set(expanded.filter((s) => s.length <= 40))];
 
   // --- Years of experience ---
   const stated = /(\d{1,2})\+?\s+years?(?:\s+of)?\s+(?:professional\s+|industry\s+)?experience/i.exec((profile.summary ?? text));
