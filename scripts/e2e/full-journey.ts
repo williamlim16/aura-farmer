@@ -61,7 +61,9 @@ async function main() {
   const appUrl = `http://localhost:${appPort}`;
   const db = await startDevDb({ dir: "memory://", port: dbPort });
   const auth = await startMockAuth({ appUrl, port: authPort });
-  const env = stackEnv({ databaseUrl: db.url, authUrl: auth.url, storageDir, llm: "mock" });
+  // Local-only: this run uses mock auth and an in-process worker with a production build,
+  // so it opts in explicitly; hosted deployments never set these.
+  const env = { ...stackEnv({ databaseUrl: db.url, authUrl: auth.url, storageDir, llm: "mock" }), ALLOW_LOCAL_AUTH_IN_PRODUCTION_BUILD: "1", APPLY_WORKER_ENABLED: "1" };
   // Production build + server (deterministic; next dev has intermittent route-compile races).
   // NODE_ENV=production for the build only; the server keeps the stack's development env so the
   // dev-only drivers (file storage, local repos) and mock auth are allowed.

@@ -1,0 +1,11 @@
+# Never upload local secrets, data or artifacts in CLI deployments.
+.env*
+!.env.example
+.data
+e2e-artifacts
+bench-results
+demo-resume.pdf
+*.pem
+*.key
+node_modules
+.next

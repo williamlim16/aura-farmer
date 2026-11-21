@@ -7,9 +7,13 @@ import { getQueue } from "~/server/jobs";
 import { getRepos } from "~/server/repos";
 import { getStorage } from "~/server/storage";
 import type { ApiDeps, ApiResult } from "./handlers";
+import { isLocalAuthInHostedDeployment } from "./hosting";
+
+export { isLocalAuthInHostedDeployment } from "./hosting";
 
 /** Supabase user id from the session cookie (verified by getClaims), or null. */
 export async function currentUserId(): Promise<string | null> {
+  if (isLocalAuthInHostedDeployment()) return null;
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const sub = data?.claims?.sub;

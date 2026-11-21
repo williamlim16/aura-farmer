@@ -158,6 +158,15 @@ export function publicApplication(a: ApplicationRecord, opts: { full?: boolean }
   };
 }
 
+/**
+ * Hosted deployments must not queue browser jobs that nothing will run.
+ * APPLY_WORKER_ENABLED=1 declares that a worker is deployed for this database.
+ */
+export function workerAvailable(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_ENV !== "production" || env.APPLY_WORKER_ENABLED === "1";
+}
+const NO_WORKER = "Autofill is not available on this deployment yet (no browser worker is deployed). Your application was prepared and saved.";
+
 /** Concurrent queued/running runs per user (cost and abuse control), enforced atomically by the queue. */
 export const MAX_ACTIVE_RUNS_PER_USER = 3;
 const RERUNNABLE = new Set(["draft", "ready_for_review", "failed", "cancelled"]);
@@ -185,6 +194,7 @@ export async function createApplicationHandler(userId: string | null, body: unkn
     });
     if (parsed.data.start) {
       if (!deps.queue) return err(503, "The browser worker queue is not configured.", "no_queue");
+      if (!workerAvailable()) return { status: 503, body: { error: NO_WORKER, code: "worker_unavailable", application: publicApplication(app, { full: true }) } };
       try {
         await deps.queue.enqueue(userId, app.id, { maxActivePerUser: MAX_ACTIVE_RUNS_PER_USER });
       } catch (e) {
@@ -237,6 +247,7 @@ export async function applicationActionHandler(userId: string | null, id: string
       }
       case "rerun": {
         if (!deps.queue) return err(503, "The browser worker queue is not configured.", "no_queue");
+        if (!workerAvailable()) return err(503, NO_WORKER, "worker_unavailable");
         // Never rewrite the snapshot of a running or submitted application.
         if (!RERUNNABLE.has(app.status)) return err(409, "This application cannot be re-run in its current state.", "not_rerunnable");
         const previous = { profileSnapshot: app.profileSnapshot, useLlm: app.useLlm };

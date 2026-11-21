@@ -15,7 +15,7 @@ import type { RateLimiter } from "~/server/postings/rate-limit";
 import type { SafeFetchOptions } from "~/server/postings/safe-fetch";
 import type { PostingRecord } from "~/server/repos/types";
 import { JobError } from "~/server/jobs/types";
-import { MAX_ACTIVE_RUNS_PER_USER, publicApplication, repoErrorToResult, type ApiDeps, type ApiResult } from "./handlers";
+import { MAX_ACTIVE_RUNS_PER_USER, publicApplication, repoErrorToResult, workerAvailable, type ApiDeps, type ApiResult } from "./handlers";
 
 const err = (status: number, error: string, code: string): ApiResult => ({ status, body: { error, code } });
 const unauth = () => err(401, "Please sign in.", "unauthenticated");
@@ -191,6 +191,7 @@ export async function preparePostingApplicationHandler(userId: string | null, id
     let app = await deps.repos.applications.create(userId, { targetKey: target.key, targetUrl: `test-form:${target.file}`, title: posting.title, company: posting.company, useLlm: p.data.useLlm, profileSnapshot: snapshot, resumeId, postingId: posting.id });
     if (p.data.start) {
       if (!deps.queue) return err(503, "The browser worker queue is not configured.", "no_queue");
+      if (!workerAvailable()) return { status: 503, body: { error: "Autofill is not available on this deployment yet (no browser worker is deployed). Your application was prepared and saved.", code: "worker_unavailable", application: publicApplication(app, { full: true }) } };
       try {
         await deps.queue.enqueue(userId, app.id, { maxActivePerUser: MAX_ACTIVE_RUNS_PER_USER });
       } catch (e) {
