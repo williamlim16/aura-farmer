@@ -1,4 +1,13 @@
-import { and, asc, eq, inArray, lt, sql, type AnyColumn } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  lt,
+  notInArray,
+  sql,
+  type AnyColumn,
+} from "drizzle-orm";
 
 import { db } from "~/server/db";
 import { jobKeywords, jobs } from "~/server/db/schema";
@@ -17,6 +26,14 @@ export function getKeywords(userId: string) {
     .from(jobKeywords)
     .where(eq(jobKeywords.userId, userId))
     .orderBy(asc(jobKeywords.createdAt));
+}
+
+/** Subquery of the user's current keywords, for filtering `jobs.keyword`. */
+function currentKeywords(userId: string) {
+  return db
+    .select({ keyword: jobKeywords.keyword })
+    .from(jobKeywords)
+    .where(eq(jobKeywords.userId, userId));
 }
 
 export async function addKeyword(userId: string, keyword: string) {
@@ -49,9 +66,21 @@ export async function removeKeyword(userId: string, keywordId: number) {
  * each board newest-first and interleave them: newest Seek, newest LinkedIn,
  * an Indeed search, 2nd-newest Seek, … Rows without an id (Indeed search
  * pages) keep Tavily's relevance order.
+ *
+ * Only jobs found by one of the user's *current* keywords are shown, so a
+ * removed keyword's results disappear even if some rows outlived the removal
+ * (e.g. a refresh that was still running when the keyword was removed).
  */
 export async function getJobFeed(userId: string, limit = 100) {
-  const rows = await db.select().from(jobs).where(eq(jobs.userId, userId));
+  const rows = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.userId, userId),
+        inArray(jobs.keyword, currentKeywords(userId)),
+      ),
+    );
 
   const bySource = new Map<string, typeof rows>();
   for (const row of rows) {
@@ -85,7 +114,7 @@ export async function getJobFeed(userId: string, limit = 100) {
  * Pipeline: read the user's keywords from the DB → search the job boards via
  * Tavily → upsert the results into the `job` table → drop anything from a
  * previous search that wasn't found again (likely expired / no longer
- * advertised).
+ * advertised) → drop jobs belonging to keywords the user has since removed.
  */
 export async function refreshJobsForUser(userId: string) {
   const keywords = await getKeywords(userId);
@@ -141,6 +170,17 @@ export async function refreshJobsForUser(userId: string) {
       removed += stale.length;
     }
   }
+
+  // Drop jobs whose keyword is no longer tracked. Catches rows inserted by
+  // this run for a keyword the user removed while the search was in flight.
+  await db
+    .delete(jobs)
+    .where(
+      and(
+        eq(jobs.userId, userId),
+        notInArray(jobs.keyword, currentKeywords(userId)),
+      ),
+    );
 
   return { saved, removed, errors };
 }
