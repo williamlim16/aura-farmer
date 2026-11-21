@@ -12,6 +12,12 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
+import {
+  DEFAULT_TRACKING_STATUS,
+  normalizeTrackingStatus,
+  type TrackingStatus,
+} from "~/lib/tracking-status";
+import { fetchRecommendations } from "~/server/company-research";
 import { db } from "~/server/db";
 import { jobKeywords, jobs, trackedJobs } from "~/server/db/schema";
 import { SOURCE_ORDER, type JobSource } from "~/server/job-boards";
@@ -144,6 +150,8 @@ export function getAllJobs(userId: string) {
       snippet: jobs.snippet,
       description: jobs.description,
       descriptionAttempts: jobs.descriptionAttempts,
+      recommendation: jobs.recommendation,
+      recommendationAttempts: jobs.recommendationAttempts,
       publishedAt: jobs.publishedAt,
       fetchedAt: jobs.fetchedAt,
     })
@@ -225,6 +233,144 @@ export async function fetchMissingDescriptions(
   return { attempted: batch.length, found, remaining };
 }
 
+/** Give up on automatic batch company research after this many failed runs. */
+export const MAX_RECOMMENDATION_ATTEMPTS = 3;
+/** Tracked roles researched per batch to stay comfortably within request limits. */
+const RECOMMENDATION_BATCH = 5;
+
+function missingRecommendation(userId: string) {
+  return and(
+    eq(trackedJobs.userId, userId),
+    isNull(jobs.recommendation),
+    lt(jobs.recommendationAttempts, MAX_RECOMMENDATION_ATTEMPTS),
+  );
+}
+
+/**
+ * Researches companies and application tips via Tavily for the next batch of
+ * tracked jobs that don't have recommendations yet.
+ */
+export async function fetchMissingRecommendations(
+  userId: string,
+  { limit = RECOMMENDATION_BATCH }: { limit?: number } = {},
+) {
+  const batch = await db
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+      company: jobs.company,
+      location: jobs.location,
+      snippet: jobs.snippet,
+      description: jobs.description,
+      url: jobs.url,
+    })
+    .from(trackedJobs)
+    .innerJoin(
+      jobs,
+      and(eq(trackedJobs.jobId, jobs.id), eq(jobs.userId, userId)),
+    )
+    .where(missingRecommendation(userId))
+    .orderBy(
+      asc(jobs.recommendationAttempts),
+      desc(trackedJobs.createdAt),
+      desc(jobs.id),
+    )
+    .limit(limit);
+
+  if (batch.length === 0) {
+    return { attempted: 0, found: 0, remaining: 0 };
+  }
+
+  const results = await fetchRecommendations(batch);
+
+  let found = 0;
+  await Promise.all(
+    batch.map(({ id }) => {
+      const result = results.get(id) ?? { status: "failed" as const };
+      if (result.status === "found") found++;
+      return db
+        .update(jobs)
+        .set(
+          result.status === "found"
+            ? { recommendation: result.recommendation }
+            : result.status === "missing"
+              ? { recommendationAttempts: MAX_RECOMMENDATION_ATTEMPTS }
+              : {
+                  recommendationAttempts: sql`${jobs.recommendationAttempts} + 1`,
+                },
+        )
+        .where(and(eq(jobs.id, id), eq(jobs.userId, userId)));
+    }),
+  );
+
+  const [{ remaining } = { remaining: 0 }] = await db
+    .select({ remaining: sql<number>`count(*)::int` })
+    .from(trackedJobs)
+    .innerJoin(
+      jobs,
+      and(eq(trackedJobs.jobId, jobs.id), eq(jobs.userId, userId)),
+    )
+    .where(missingRecommendation(userId));
+
+  return { attempted: batch.length, found, remaining };
+}
+
+/**
+ * Runs Tavily company research and role recommendations for a single job
+ * owned by `userId` and persists the result on the `job` row.
+ */
+export async function researchJobForUser(userId: string, jobId: number) {
+  const [job] = await db
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+      company: jobs.company,
+      location: jobs.location,
+      snippet: jobs.snippet,
+      description: jobs.description,
+      url: jobs.url,
+    })
+    .from(jobs)
+    .where(and(eq(jobs.id, jobId), eq(jobs.userId, userId)))
+    .limit(1);
+
+  if (!job) {
+    return { status: "missing" as const, recommendation: null };
+  }
+
+  const results = await fetchRecommendations([job]);
+  const result = results.get(job.id) ?? { status: "failed" as const };
+
+  await db
+    .update(jobs)
+    .set(
+      result.status === "found"
+        ? { recommendation: result.recommendation }
+        : result.status === "missing"
+          ? { recommendationAttempts: MAX_RECOMMENDATION_ATTEMPTS }
+          : {
+              recommendationAttempts: sql`${jobs.recommendationAttempts} + 1`,
+            },
+    )
+    .where(and(eq(jobs.id, job.id), eq(jobs.userId, userId)));
+
+  return {
+    status: result.status,
+    recommendation: result.status === "found" ? result.recommendation : null,
+  };
+}
+
+/** Map of tracked job IDs to their application pipeline status. */
+export async function getTrackedJobStatuses(
+  userId: string,
+): Promise<Map<number, TrackingStatus>> {
+  const rows = await db
+    .select({ jobId: trackedJobs.jobId, status: trackedJobs.status })
+    .from(trackedJobs)
+    .where(eq(trackedJobs.userId, userId));
+  return new Map(rows.map((r) => [r.jobId, normalizeTrackingStatus(r.status)]));
+}
+
 /** Set of job IDs currently saved in the user's tracking shortlist. */
 export async function getTrackedJobIds(userId: string): Promise<Set<number>> {
   const rows = await db
@@ -250,9 +396,12 @@ export function getTrackedJobs(userId: string) {
       location: jobs.location,
       snippet: jobs.snippet,
       description: jobs.description,
+      recommendation: jobs.recommendation,
+      recommendationAttempts: jobs.recommendationAttempts,
       publishedAt: jobs.publishedAt,
       fetchedAt: jobs.fetchedAt,
       trackedAt: trackedJobs.createdAt,
+      trackingStatus: trackedJobs.status,
     })
     .from(trackedJobs)
     .innerJoin(
@@ -271,6 +420,7 @@ export async function setJobsTracked(
   userId: string,
   jobIds: number[],
   tracked: boolean,
+  status: TrackingStatus = DEFAULT_TRACKING_STATUS,
 ) {
   const uniqueIds = [...new Set(jobIds)];
   if (uniqueIds.length === 0) return;
@@ -284,7 +434,7 @@ export async function setJobsTracked(
 
     await db
       .insert(trackedJobs)
-      .values(owned.map((row) => ({ userId, jobId: row.id })))
+      .values(owned.map((row) => ({ userId, jobId: row.id, status })))
       .onConflictDoNothing({
         target: [trackedJobs.userId, trackedJobs.jobId],
       });
@@ -299,6 +449,33 @@ export async function setJobsTracked(
         inArray(trackedJobs.jobId, uniqueIds),
       ),
     );
+}
+
+/**
+ * Updates the pipeline status for one or more jobs, adding them to the user's
+ * tracking shortlist if they are not already tracked.
+ */
+export async function setJobTrackingStatus(
+  userId: string,
+  jobIds: number[],
+  status: TrackingStatus,
+) {
+  const uniqueIds = [...new Set(jobIds)];
+  if (uniqueIds.length === 0) return;
+
+  const owned = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.userId, userId), inArray(jobs.id, uniqueIds)));
+  if (owned.length === 0) return;
+
+  await db
+    .insert(trackedJobs)
+    .values(owned.map((row) => ({ userId, jobId: row.id, status })))
+    .onConflictDoUpdate({
+      target: [trackedJobs.userId, trackedJobs.jobId],
+      set: { status },
+    });
 }
 
 /**

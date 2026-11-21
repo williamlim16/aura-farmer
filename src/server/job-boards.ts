@@ -52,6 +52,12 @@ export const JOB_SOURCES = {
 
 export type JobSource = keyof typeof JOB_SOURCES;
 
+/** Display label for a stored `jobs.source` (boards, plus "company" research). */
+export function sourceLabel(source: string): string {
+  if (source === "company") return "Company research";
+  return JOB_SOURCES[source as JobSource]?.label ?? source;
+}
+
 /** Order sources appear in when the feed interleaves them. */
 export const SOURCE_ORDER: JobSource[] = ["seek", "linkedin", "indeed"];
 
@@ -99,7 +105,10 @@ export function titleMatchesKeyword(title: string, keyword: string): boolean {
 
 /** Strip markdown emphasis and collapse whitespace. */
 const clean = (text: string) =>
-  text.replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim();
+  text
+    .replace(/\*\*|__/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const UNIT_MS: Record<string, number> = {
   m: 60_000,
@@ -138,43 +147,46 @@ function chunksAt(content: string, start: RegExp): string[] {
  *   1d ago
  */
 function parseSeek(content: string, now: Date): JobSearchResult[] {
-  return chunksAt(content, /^### \[[^\]]+\]\(https:\/\/[^)]*\/job\/\d+/gm).flatMap(
-    (card) => {
-      const head = /^### \[([^\]]+)\]\(https:\/\/[^)]*\/job\/(\d+)/.exec(card);
-      if (!head) return [];
-      const [, title, id] = head;
+  return chunksAt(
+    content,
+    /^### \[[^\]]+\]\(https:\/\/[^)]*\/job\/\d+/gm,
+  ).flatMap((card) => {
+    const head = /^### \[([^\]]+)\]\(https:\/\/[^)]*\/job\/(\d+)/.exec(card);
+    if (!head) return [];
+    const [, title, id] = head;
 
-      // Location is the first line after "This is a Full time job", either
-      // plain text or a "Limit results to …" link, plus "(Hybrid)" etc.
-      const locationLine = /^This is an? [^\n]* job\s*\n\s*([^\n]+)/m.exec(card)?.[1];
-      const location = locationLine
-        ?.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-        .replace(/\(([^)]+)\)/g, " ($1)");
-      const age = /^(\d+)([mhd])\+? ago/m.exec(card);
+    // Location is the first line after "This is a Full time job", either
+    // plain text or a "Limit results to …" link, plus "(Hybrid)" etc.
+    const locationLine = /^This is an? [^\n]* job\s*\n\s*([^\n]+)/m.exec(
+      card,
+    )?.[1];
+    const location = locationLine
+      ?.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/\(([^)]+)\)/g, " ($1)");
+    const age = /^(\d+)([mhd])\+? ago/m.exec(card);
 
-      // The summary is the last plain-text line before "subClassification".
-      const body = card.split(/^subClassification:/m)[0]!;
-      const summary = body
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l && !/^[*![#]|^at\[|^This is a |^Recruited by /.test(l))
-        .at(-1);
+    // The summary is the last plain-text line before "subClassification".
+    const body = card.split(/^subClassification:/m)[0]!;
+    const summary = body
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !/^[*![#]|^at\[|^This is a |^Recruited by /.test(l))
+      .at(-1);
 
-      return [
-        {
-          source: "seek" as const,
-          title: clean(title!),
-          url: `https://au.seek.com/job/${id}`,
-          postingId: Number(id),
-          company: clean(/^at\s*\[([^\]]+)\]/m.exec(card)?.[1] ?? "") || null,
-          location: location ? clean(location) || null : null,
-          snippet: summary ? clean(summary) : null,
-          score: null,
-          publishedAt: age ? agoToDate(age[1]!, age[2]!, now) : null,
-        },
-      ];
-    },
-  );
+    return [
+      {
+        source: "seek" as const,
+        title: clean(title!),
+        url: `https://au.seek.com/job/${id}`,
+        postingId: Number(id),
+        company: clean(/^at\s*\[([^\]]+)\]/m.exec(card)?.[1] ?? "") || null,
+        location: location ? clean(location) || null : null,
+        snippet: summary ? clean(summary) : null,
+        score: null,
+        publishedAt: age ? agoToDate(age[1]!, age[2]!, now) : null,
+      },
+    ];
+  });
 }
 
 /**
@@ -184,34 +196,40 @@ function parseSeek(content: string, now: Date): JobSearchResult[] {
  *    Brisbane, Queensland, Australia  Be an early applicant   2 days ago
  */
 function parseLinkedIn(content: string, now: Date): JobSearchResult[] {
-  return chunksAt(content, /^\*\s+\[[^\]]+\]\(https:\/\/[^)]*linkedin\.com\/jobs\/view\//gm).flatMap(
-    (card) => {
-      const head =
-        /^\*\s+\[([^\]]+)\]\(https:\/\/[^)]*linkedin\.com\/jobs\/view\/[^)?]*?(\d{6,})[)?]/.exec(card);
-      if (!head) return [];
-      const [, title, id] = head;
+  return chunksAt(
+    content,
+    /^\*\s+\[[^\]]+\]\(https:\/\/[^)]*linkedin\.com\/jobs\/view\//gm,
+  ).flatMap((card) => {
+    const head =
+      /^\*\s+\[([^\]]+)\]\(https:\/\/[^)]*linkedin\.com\/jobs\/view\/[^)?]*?(\d{6,})[)?]/.exec(
+        card,
+      );
+    if (!head) return [];
+    const [, title, id] = head;
 
-      const company = /^#### (?:\[([^\]]+)\]\([^)]*\)|(.+))/m.exec(card);
-      const companyEnd = company ? company.index + company[0].length : 0;
-      const meta = card.slice(companyEnd).split("\n").find((l) => l.trim());
-      const age = /(\d+)\s+(minute|hour|day|week|month)s?\s+ago/i.exec(card);
+    const company = /^#### (?:\[([^\]]+)\]\([^)]*\)|(.+))/m.exec(card);
+    const companyEnd = company ? company.index + company[0].length : 0;
+    const meta = card
+      .slice(companyEnd)
+      .split("\n")
+      .find((l) => l.trim());
+    const age = /(\d+)\s+(minute|hour|day|week|month)s?\s+ago/i.exec(card);
 
-      return [
-        {
-          source: "linkedin" as const,
-          title: clean(title!),
-          url: `https://www.linkedin.com/jobs/view/${id}`,
-          postingId: Number(id),
-          company: company ? clean(company[1] ?? company[2] ?? "") || null : null,
-          // " Brisbane, Queensland, Australia  Be an early applicant   2 days ago"
-          location: meta ? clean(meta.trim().split(/\s{2,}/)[0]!) || null : null,
-          snippet: null,
-          score: null,
-          publishedAt: age ? agoToDate(age[1]!, age[2]!, now) : null,
-        },
-      ];
-    },
-  );
+    return [
+      {
+        source: "linkedin" as const,
+        title: clean(title!),
+        url: `https://www.linkedin.com/jobs/view/${id}`,
+        postingId: Number(id),
+        company: company ? clean(company[1] ?? company[2] ?? "") || null : null,
+        // " Brisbane, Queensland, Australia  Be an early applicant   2 days ago"
+        location: meta ? clean(meta.trim().split(/\s{2,}/)[0]!) || null : null,
+        snippet: null,
+        score: null,
+        publishedAt: age ? agoToDate(age[1]!, age[2]!, now) : null,
+      },
+    ];
+  });
 }
 
 /**
@@ -223,38 +241,41 @@ function parseLinkedIn(content: string, now: Date): JobSearchResult[] {
  * string in `company`.
  */
 function parseIndeed(content: string): JobSearchResult[] {
-  return chunksAt(content, /^### \[[^\]]+\]\(https:\/\/au\.indeed\.com\/[^)]*jk=/gm).flatMap(
-    (card) => {
-      const head =
-        /^### \[([^\]]+)\]\(https:\/\/au\.indeed\.com\/[^)]*[?&]jk=([0-9a-f]+)[^)]*\)([^\n]*)/.exec(card);
-      if (!head) return [];
-      const [, title, jk, companyAndLocation] = head;
+  return chunksAt(
+    content,
+    /^### \[[^\]]+\]\(https:\/\/au\.indeed\.com\/[^)]*jk=/gm,
+  ).flatMap((card) => {
+    const head =
+      /^### \[([^\]]+)\]\(https:\/\/au\.indeed\.com\/[^)]*[?&]jk=([0-9a-f]+)[^)]*\)([^\n]*)/.exec(
+        card,
+      );
+    if (!head) return [];
+    const [, title, jk, companyAndLocation] = head;
 
-      const snippet = card
-        .split("\n")
-        .map((l) => l.trim().replace(/^\*\s+/, ""))
-        .find(
-          (l) =>
-            l &&
-            !l.startsWith("###") &&
-            !/^(View all|Salary Search|See popular)/.test(l),
-        );
+    const snippet = card
+      .split("\n")
+      .map((l) => l.trim().replace(/^\*\s+/, ""))
+      .find(
+        (l) =>
+          l &&
+          !l.startsWith("###") &&
+          !/^(View all|Salary Search|See popular)/.test(l),
+      );
 
-      return [
-        {
-          source: "indeed" as const,
-          title: clean(title!),
-          url: `https://au.indeed.com/viewjob?jk=${jk}`,
-          postingId: null,
-          company: clean(companyAndLocation ?? "") || null,
-          location: null,
-          snippet: snippet ? clean(snippet) : null,
-          score: null,
-          publishedAt: null,
-        },
-      ];
-    },
-  );
+    return [
+      {
+        source: "indeed" as const,
+        title: clean(title!),
+        url: `https://au.indeed.com/viewjob?jk=${jk}`,
+        postingId: null,
+        company: clean(companyAndLocation ?? "") || null,
+        location: null,
+        snippet: snippet ? clean(snippet) : null,
+        score: null,
+        publishedAt: null,
+      },
+    ];
+  });
 }
 
 /**
@@ -275,6 +296,8 @@ export function parseSearchPage(
         : parseIndeed(content);
 
   // Cards can repeat (Seek renders some twice); keep the first of each url.
-  const unique = [...new Map(parsed.reverse().map((j) => [j.url, j])).values()].reverse();
+  const unique = [
+    ...new Map(parsed.reverse().map((j) => [j.url, j])).values(),
+  ].reverse();
   return unique.filter((j) => titleMatchesKeyword(j.title, keyword));
 }
