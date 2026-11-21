@@ -42,3 +42,17 @@ describe("safety guard with explicit user answers", () => {
     expect(guardDecision(eeo, { action: "fill", value: "Decline", tier: "llm", confidence: 1, userProvided: true }, field).action).toBe("human");
   });
 });
+
+import { isAtsResumeUpload } from "~/server/apply-real/run-real";
+
+describe("resume upload allowance", () => {
+  const up = (url: string, o: Partial<{ method: string; resourceType: string; contentType: string }> = {}) => isAtsResumeUpload({ method: "POST", resourceType: "xhr", contentType: "multipart/form-data; boundary=x", url, ...o });
+  it("allows only Greenhouse's own bucket multipart upload", () => {
+    expect(up("https://grnhse-prod-jben-us-east-1.s3.amazonaws.com/")).toBe(true);
+    expect(up("https://grnhse-prod-jben-us-west-2.s3.us-west-2.amazonaws.com/")).toBe(true);
+    for (const bad of ["https://evil.s3.amazonaws.com/", "https://grnhse-x.s3.amazonaws.com.evil.com/", "http://grnhse-x.s3.amazonaws.com/", "https://grnhse-x.s3.amazonaws.com/other", "https://job-boards.greenhouse.io/applications"]) expect(up(bad)).toBe(false);
+    expect(up("https://grnhse-x.s3.amazonaws.com/", { contentType: "application/json" })).toBe(false);
+    expect(up("https://grnhse-x.s3.amazonaws.com/", { method: "PUT" })).toBe(false);
+    expect(up("https://grnhse-x.s3.amazonaws.com/", { resourceType: "document" })).toBe(false);
+  });
+});

@@ -69,12 +69,12 @@ function egressPolicy() {
   };
 }
 
-/** Greenhouse attaches a resume by POSTing multipart data to its own S3 bucket (grnhse-*.s3.<region>.amazonaws.com). */
+/** Greenhouse attaches a resume by POSTing multipart data to its own S3 bucket (grnhse-*.s3[.<region>].amazonaws.com). */
 export function isAtsResumeUpload(req: { method: string; url: string; resourceType: string; contentType: string }): boolean {
   if (req.method !== "POST" || req.resourceType !== "xhr" || !req.contentType.toLowerCase().startsWith("multipart/form-data")) return false;
   try {
     const u = new URL(req.url);
-    return u.protocol === "https:" && /^grnhse-[a-z0-9-]+\.s3\.[a-z0-9-]+\.amazonaws\.com$/.test(u.hostname) && u.pathname === "/";
+    return u.protocol === "https:" && /^grnhse-[a-z0-9-]+\.s3(\.[a-z0-9-]+)?\.amazonaws\.com$/.test(u.hostname) && u.pathname === "/";
   } catch {
     return false;
   }
@@ -117,6 +117,7 @@ async function open(input: RealRunInput, events: string[]) {
 }
 
 function evidence(o: Awaited<ReturnType<typeof open>>, events: string[], screenshot: Buffer): RunEvidence {
+  for (const b of o.result.guard?.blockedNetwork ?? []) events.push(`guard blocked: ${b.method} ${b.resourceType} ${new URL(b.url).host}${new URL(b.url).pathname}`.slice(0, 200));
   return {
     runtime: { executor: o.launched.runtime, chromiumVersion: o.launched.chromiumVersion, region: process.env.VERCEL_REGION ?? null, durationMs: Date.now() - o.t0, providers: o.provs.map((p) => p.name) },
     report: o.result.report,
