@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { formatJobRows } from "~/components/jobs/format-job-rows";
 import { JobsTable } from "~/components/jobs/jobs-table";
+import { normalizeTrackingStatus } from "~/lib/tracking-status";
 import { requireUser } from "~/server/auth";
 import { getKeywords, getTrackedJobs } from "~/server/jobs";
 import { getTailoredResumeStatuses } from "~/server/tailored-resumes";
@@ -23,8 +24,10 @@ export default async function TrackingJobsPage() {
     getTailoredResumeStatuses(user.id),
   ]);
   const trackedKeywords = new Set(keywords.map((k) => k.keyword));
-  const trackedJobIds = new Set(jobs.map((j) => j.id));
-  const rows = formatJobRows(jobs, trackedKeywords, trackedJobIds, tailored);
+  const trackedStatuses = new Map(
+    jobs.map((j) => [j.id, normalizeTrackingStatus(j.trackingStatus)]),
+  );
+  const rows = formatJobRows(jobs, trackedKeywords, trackedStatuses, tailored);
 
   return (
     <>

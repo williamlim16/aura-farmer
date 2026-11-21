@@ -1,5 +1,6 @@
 import { postedLabel } from "~/components/jobs/job-card";
 import type { JobRow } from "~/components/jobs/jobs-table";
+import type { TrackingStatus } from "~/lib/tracking-status";
 import { JOB_SOURCES, type JobSource } from "~/server/job-boards";
 import type { TailoredResumeStatus } from "~/server/tailored-resumes";
 
@@ -39,8 +40,8 @@ function foundLabel(date: Date): string {
 export function formatJobRows(
   jobs: FormattableJob[],
   trackedKeywords: Set<string>,
-  trackedJobIds: Set<number>,
-  tailored?: Map<number, TailoredResumeStatus>,
+  trackedStatuses: ReadonlyMap<number, TrackingStatus>,
+  tailored?: ReadonlyMap<number, TailoredResumeStatus>,
 ): JobRow[] {
   return jobs.map((job) => ({
     id: job.id,
@@ -50,7 +51,8 @@ export function formatJobRows(
     sourceLabel: JOB_SOURCES[job.source as JobSource]?.label ?? job.source,
     keyword: job.keyword,
     keywordTracked: trackedKeywords.has(job.keyword),
-    tracked: trackedJobIds.has(job.id),
+    tracked: trackedStatuses.has(job.id),
+    trackingStatus: trackedStatuses.get(job.id) ?? null,
     company: job.company,
     location: job.location,
     snippet: job.snippet,

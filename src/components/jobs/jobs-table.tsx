@@ -23,11 +23,21 @@ import {
   Search,
 } from "lucide-react";
 
-import { setJobsTrackedAction } from "~/app/jobs/actions";
+import {
+  setJobsTrackedAction,
+  setJobTrackingStatusAction,
+} from "~/app/jobs/actions";
 import { TailorResumeCell } from "~/components/jobs/tailor-resume-cell";
 import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import {
+  DEFAULT_TRACKING_STATUS,
+  isTrackingStatus,
+  TRACKING_STATUSES,
+  TRACKING_STATUS_META,
+  type TrackingStatus,
+} from "~/lib/tracking-status";
 import { cn } from "~/lib/utils";
 import type { TailoredResumeStatus } from "~/server/tailored-resumes";
 
@@ -43,6 +53,8 @@ export interface JobRow {
   keywordTracked: boolean;
   /** True if the user has added this job to their /tracking shortlist. */
   tracked: boolean;
+  /** Pipeline stage for tracked jobs; null when not tracked. */
+  trackingStatus: TrackingStatus | null;
   company: string | null;
   location: string | null;
   snippet: string | null;
@@ -57,8 +69,12 @@ export interface JobRow {
   tailored?: TailoredResumeStatus | null;
 }
 
-type SortKey = "title" | "company" | "posted" | "found";
+type SortKey = "title" | "company" | "status" | "posted" | "found";
 type SortDir = "asc" | "desc";
+
+type OptimisticUpdate =
+  | { type: "track"; jobIds: Set<number>; tracked: boolean }
+  | { type: "status"; jobIds: Set<number>; status: TrackingStatus };
 
 const PAGE_SIZE = 20;
 const ALL = "all";
@@ -66,6 +82,9 @@ const ALL = "all";
 const compare: Record<SortKey, (a: JobRow, b: JobRow) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
   company: (a, b) => (a.company ?? "").localeCompare(b.company ?? ""),
+  status: (a, b) =>
+    (a.trackingStatus ? TRACKING_STATUS_META[a.trackingStatus].order : 99) -
+    (b.trackingStatus ? TRACKING_STATUS_META[b.trackingStatus].order : 99),
   // Undated (Indeed) jobs sort as oldest.
   posted: (a, b) => (a.postedAt ?? 0) - (b.postedAt ?? 0),
   found: (a, b) => a.foundAt - b.foundAt,
@@ -81,6 +100,7 @@ export function JobsTable({
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<string>(ALL);
   const [keyword, setKeyword] = useState<string>(ALL);
+  const [statusFilter, setStatusFilter] = useState<string>(ALL);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
     key: "found",
     dir: "desc",
@@ -92,10 +112,24 @@ export function JobsTable({
 
   const [optimisticRows, applyOptimistic] = useOptimistic(
     rows,
-    (state: JobRow[], update: { jobIds: Set<number>; tracked: boolean }) =>
-      state.map((r) =>
-        update.jobIds.has(r.id) ? { ...r, tracked: update.tracked } : r,
-      ),
+    (state: JobRow[], update: OptimisticUpdate) =>
+      state.map((r) => {
+        if (!update.jobIds.has(r.id)) return r;
+        if (update.type === "track") {
+          return {
+            ...r,
+            tracked: update.tracked,
+            trackingStatus: update.tracked
+              ? (r.trackingStatus ?? DEFAULT_TRACKING_STATUS)
+              : null,
+          };
+        }
+        return {
+          ...r,
+          tracked: true,
+          trackingStatus: update.status,
+        };
+      }),
   );
 
   const effectiveRows = useMemo(
@@ -110,6 +144,17 @@ export function JobsTable({
     () => optimisticRows.filter((r) => r.tracked).length,
     [optimisticRows],
   );
+
+  const statusCounts = useMemo(() => {
+    const counts = new Map<TrackingStatus, number>();
+    for (const s of TRACKING_STATUSES) counts.set(s, 0);
+    for (const r of effectiveRows) {
+      if (r.trackingStatus) {
+        counts.set(r.trackingStatus, (counts.get(r.trackingStatus) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [effectiveRows]);
 
   const sources = useMemo(
     () =>
@@ -130,12 +175,17 @@ export function JobsTable({
     [effectiveRows],
   );
 
+  const activeStatusFilter =
+    mode === "all" && trackedCount === 0 ? ALL : statusFilter;
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = effectiveRows.filter(
       (r) =>
         (source === ALL || r.source === source) &&
         (keyword === ALL || r.keyword === keyword) &&
+        (activeStatusFilter === ALL ||
+          r.trackingStatus === activeStatusFilter) &&
         (!q ||
           [r.title, r.company, r.location, r.snippet, r.description].some((f) =>
             f?.toLowerCase().includes(q),
@@ -146,7 +196,7 @@ export function JobsTable({
     return list.sort(
       (a, b) => sign * compare[sort.key](a, b) || compare.found(b, a),
     );
-  }, [effectiveRows, query, source, keyword, sort]);
+  }, [effectiveRows, query, source, keyword, activeStatusFilter, sort]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pageCount - 1);
@@ -155,7 +205,8 @@ export function JobsTable({
     (current + 1) * PAGE_SIZE,
   );
 
-  const columnCount = mode === "tracking" ? 9 : 8;
+  // Resume column only appears on the Tracking table.
+  const columnCount = mode === "tracking" ? 10 : 9;
 
   const allVisibleTracked =
     visible.length > 0 && visible.every((r) => r.tracked);
@@ -165,8 +216,20 @@ export function JobsTable({
     if (jobIds.length === 0) return;
     setActionError(null);
     startTransition(async () => {
-      applyOptimistic({ jobIds: new Set(jobIds), tracked });
+      applyOptimistic({ type: "track", jobIds: new Set(jobIds), tracked });
       const result = await setJobsTrackedAction({ jobIds, tracked });
+      if (!result.ok) {
+        setActionError(result.message);
+      }
+    });
+  }
+
+  function changeStatus(jobIds: number[], status: TrackingStatus) {
+    if (jobIds.length === 0) return;
+    setActionError(null);
+    startTransition(async () => {
+      applyOptimistic({ type: "status", jobIds: new Set(jobIds), status });
+      const result = await setJobTrackingStatusAction({ jobIds, status });
       if (!result.ok) {
         setActionError(result.message);
       }
@@ -199,7 +262,13 @@ export function JobsTable({
     setSort((s) =>
       s.key === key
         ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: key === "title" || key === "company" ? "asc" : "desc" },
+        : {
+            key,
+            dir:
+              key === "title" || key === "company" || key === "status"
+                ? "asc"
+                : "desc",
+          },
     );
     setPage(0);
   }
@@ -256,7 +325,7 @@ export function JobsTable({
   return (
     <section className="space-y-4">
       {/* Toolbar */}
-      <div className="glass-surface flex flex-col gap-3 rounded-2xl p-4 md:flex-row md:items-center">
+      <div className="glass-surface flex flex-col gap-3 rounded-2xl p-4 lg:flex-row lg:items-center">
         <div className="relative flex-1">
           <Search
             aria-hidden="true"
@@ -310,6 +379,22 @@ export function JobsTable({
           </select>
         )}
 
+        {mode === "all" && trackedCount > 0 && (
+          <select
+            value={activeStatusFilter}
+            onChange={(e) => resetPage(setStatusFilter)(e.target.value)}
+            aria-label="Filter by tracking status"
+            className="border-input bg-background/70 text-foreground hover:border-foreground/25 focus-visible:border-ring focus-visible:ring-ring/30 dark:bg-background/50 h-10 cursor-pointer rounded-lg border px-3 text-sm outline-none focus-visible:ring-2"
+          >
+            <option value={ALL}>All statuses</option>
+            {TRACKING_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {TRACKING_STATUS_META[s].label} ({statusCounts.get(s) ?? 0})
+              </option>
+            ))}
+          </select>
+        )}
+
         {mode === "all" && (
           <Link
             href="/jobs/tracking"
@@ -328,6 +413,35 @@ export function JobsTable({
           </Link>
         )}
       </div>
+
+      {/* Pipeline status bar on Tracking view */}
+      {mode === "tracking" && (
+        <div
+          role="group"
+          aria-label="Filter by tracking status"
+          className="glass-surface flex flex-wrap items-center gap-1.5 rounded-2xl px-4 py-3"
+        >
+          <FilterChip
+            active={statusFilter === ALL}
+            onClick={() => resetPage(setStatusFilter)(ALL)}
+            label="All statuses"
+            count={effectiveRows.length}
+          />
+          {TRACKING_STATUSES.map((s) => {
+            const meta = TRACKING_STATUS_META[s];
+            return (
+              <FilterChip
+                key={s}
+                active={statusFilter === s}
+                onClick={() => resetPage(setStatusFilter)(s)}
+                label={meta.label}
+                count={statusCounts.get(s) ?? 0}
+                dotClass={meta.dotClass}
+              />
+            );
+          })}
+        </div>
+      )}
 
       {actionError && (
         <div
@@ -381,6 +495,13 @@ export function JobsTable({
                   onSort={toggleSort}
                   className="hidden lg:table-cell"
                 />
+                <SortHeader
+                  label="Status"
+                  sortKey="status"
+                  sort={sort}
+                  onSort={toggleSort}
+                  className="hidden sm:table-cell"
+                />
                 <th
                   scope="col"
                   className="hidden px-3 py-3 font-mono font-medium xl:table-cell"
@@ -389,7 +510,7 @@ export function JobsTable({
                 </th>
                 <th
                   scope="col"
-                  className="hidden px-3 py-3 font-mono font-medium sm:table-cell"
+                  className="hidden px-3 py-3 font-mono font-medium md:table-cell"
                 >
                   Board
                 </th>
@@ -405,7 +526,7 @@ export function JobsTable({
                   sortKey="found"
                   sort={sort}
                   onSort={toggleSort}
-                  className="hidden md:table-cell"
+                  className="hidden lg:table-cell"
                 />
                 {mode === "tracking" && (
                   <th scope="col" className="px-3 py-3 font-mono font-medium">
@@ -458,7 +579,7 @@ export function JobsTable({
                         </td>
 
                         {/* Role */}
-                        <td className="min-w-56 px-3 py-4">
+                        <td className="min-w-60 px-3 py-4">
                           <a
                             href={job.url}
                             target="_blank"
@@ -487,7 +608,7 @@ export function JobsTable({
                               </span>
                             )}
                             {/* Board + date collapse into the role cell on small screens */}
-                            <span className="sm:hidden">{job.sourceLabel}</span>
+                            <span className="md:hidden">{job.sourceLabel}</span>
                             <span className="font-mono md:hidden">
                               {job.postedLabel}
                             </span>
@@ -509,16 +630,20 @@ export function JobsTable({
                             >
                               {job.keyword}
                             </Badge>
-                            {mode === "all" && job.tracked && (
-                              <Badge variant="default" className="text-[11px]">
-                                Tracked
-                              </Badge>
-                            )}
+                            <div className="sm:hidden">
+                              <StatusSelect
+                                status={job.trackingStatus}
+                                jobTitle={job.title}
+                                onChange={(status) =>
+                                  changeStatus([job.id], status)
+                                }
+                              />
+                            </div>
                           </div>
                         </td>
 
                         {/* Company */}
-                        <td className="text-foreground/90 hidden w-[16%] px-3 py-4 lg:table-cell">
+                        <td className="text-foreground/90 hidden w-[15%] px-3 py-4 lg:table-cell">
                           <span className="line-clamp-2">
                             {job.company ?? (
                               <span className="text-muted-foreground">—</span>
@@ -526,8 +651,19 @@ export function JobsTable({
                           </span>
                         </td>
 
+                        {/* Status */}
+                        <td className="hidden px-3 py-4 whitespace-nowrap sm:table-cell">
+                          <StatusSelect
+                            status={job.trackingStatus}
+                            jobTitle={job.title}
+                            onChange={(status) =>
+                              changeStatus([job.id], status)
+                            }
+                          />
+                        </td>
+
                         {/* Description */}
-                        <td className="hidden w-[34%] px-3 py-4 xl:table-cell">
+                        <td className="hidden w-[32%] min-w-64 px-3 py-4 xl:table-cell">
                           {job.description ? (
                             <button
                               type="button"
@@ -551,7 +687,7 @@ export function JobsTable({
                         </td>
 
                         {/* Board */}
-                        <td className="hidden px-3 py-4 sm:table-cell">
+                        <td className="hidden px-3 py-4 whitespace-nowrap md:table-cell">
                           <Badge variant="teal">{job.sourceLabel}</Badge>
                         </td>
 
@@ -562,7 +698,7 @@ export function JobsTable({
 
                         {/* Found */}
                         <td
-                          className="text-muted-foreground hidden px-3 py-4 font-mono text-xs whitespace-nowrap md:table-cell"
+                          className="text-muted-foreground hidden px-3 py-4 font-mono text-xs whitespace-nowrap lg:table-cell"
                           title={`Last found ${job.foundTitle}`}
                         >
                           {job.foundLabel}
@@ -630,7 +766,7 @@ export function JobsTable({
                           className="border-border/50 bg-muted/30 border-b"
                         >
                           <td colSpan={columnCount} className="px-5 pt-0 pb-5">
-                            <p className="border-aura-primary/40 text-muted-foreground max-w-3xl border-l-2 pl-3 text-xs leading-relaxed whitespace-pre-line">
+                            <p className="border-aura-primary/40 text-muted-foreground max-w-5xl border-l-2 pl-3 text-xs leading-relaxed whitespace-pre-line">
                               {details}
                             </p>
                           </td>
@@ -684,6 +820,64 @@ export function JobsTable({
   );
 }
 
+function StatusSelect({
+  status,
+  jobTitle,
+  onChange,
+}: {
+  status: TrackingStatus | null;
+  jobTitle: string;
+  onChange: (status: TrackingStatus) => void;
+}) {
+  return (
+    <div className="relative inline-flex items-center">
+      {status && (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute left-2.5 size-1.5 rounded-full",
+            TRACKING_STATUS_META[status].dotClass,
+          )}
+        />
+      )}
+      <select
+        value={status ?? ""}
+        onChange={(e) => {
+          if (isTrackingStatus(e.target.value)) {
+            onChange(e.target.value);
+          }
+        }}
+        aria-label={`Tracking status for ${jobTitle}`}
+        className={cn(
+          "focus-visible:ring-ring h-7 cursor-pointer appearance-none rounded-full border pr-6 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none",
+          status
+            ? cn("pl-5", TRACKING_STATUS_META[status].badgeClass)
+            : "border-border/80 bg-background/60 text-muted-foreground hover:border-foreground/25 hover:text-foreground pl-2.5",
+        )}
+      >
+        {!status && (
+          <option value="" disabled>
+            Untracked
+          </option>
+        )}
+        {TRACKING_STATUSES.map((s) => (
+          <option
+            key={s}
+            value={s}
+            className="bg-popover text-popover-foreground"
+          >
+            {TRACKING_STATUS_META[s].label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        aria-hidden="true"
+        className="pointer-events-none absolute right-2 size-3 opacity-70"
+      />
+    </div>
+  );
+}
+
 function SortHeader({
   label,
   sortKey,
@@ -730,11 +924,13 @@ function FilterChip({
   onClick,
   label,
   count,
+  dotClass,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   count: number;
+  dotClass?: string;
 }) {
   return (
     <button
@@ -748,6 +944,12 @@ function FilterChip({
           : "border-border bg-card/60 text-muted-foreground hover:text-foreground",
       )}
     >
+      {dotClass && (
+        <span
+          aria-hidden="true"
+          className={cn("size-2 shrink-0 rounded-full", dotClass)}
+        />
+      )}
       {label}
       <span className="font-mono text-[10px] opacity-70">{count}</span>
     </button>
