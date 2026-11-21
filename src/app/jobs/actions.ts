@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import {
+  TRACKING_STATUSES,
+  TRACKING_STATUS_META,
+  type TrackingStatus,
+} from "~/lib/tracking-status";
 import { requireUser } from "~/server/auth";
 import {
   addKeyword,
@@ -12,6 +17,7 @@ import {
   refreshJobsForUser,
   removeKeyword,
   setJobsTracked,
+  setJobTrackingStatus,
 } from "~/server/jobs";
 
 export interface ActionState {
@@ -119,6 +125,39 @@ export async function setJobsTrackedAction(input: {
     return {
       ok: false,
       message: "Could not update tracking list. Please try again.",
+    };
+  }
+}
+
+const trackJobStatusSchema = z.object({
+  jobIds: z.array(z.number().int().positive()).min(1).max(200),
+  status: z.enum(TRACKING_STATUSES),
+});
+
+export async function setJobTrackingStatusAction(input: {
+  jobIds: number[];
+  status: TrackingStatus;
+}): Promise<ActionState> {
+  const user = await requireUser();
+
+  const parsed = trackJobStatusSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: "Invalid tracking status." };
+  }
+
+  try {
+    await setJobTrackingStatus(user.id, parsed.data.jobIds, parsed.data.status);
+    revalidatePath("/jobs", "layout");
+    revalidatePath("/tracking");
+    return {
+      ok: true,
+      message: `Status updated to ${TRACKING_STATUS_META[parsed.data.status].label}.`,
+    };
+  } catch (err) {
+    console.error("setJobTrackingStatusAction failed", err);
+    return {
+      ok: false,
+      message: "Could not update tracking status. Please try again.",
     };
   }
 }

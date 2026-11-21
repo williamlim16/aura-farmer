@@ -12,6 +12,11 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
+import {
+  DEFAULT_TRACKING_STATUS,
+  normalizeTrackingStatus,
+  type TrackingStatus,
+} from "~/lib/tracking-status";
 import { db } from "~/server/db";
 import { jobKeywords, jobs, trackedJobs } from "~/server/db/schema";
 import { SOURCE_ORDER, type JobSource } from "~/server/job-boards";
@@ -225,6 +230,17 @@ export async function fetchMissingDescriptions(
   return { attempted: batch.length, found, remaining };
 }
 
+/** Map of tracked job IDs to their application pipeline status. */
+export async function getTrackedJobStatuses(
+  userId: string,
+): Promise<Map<number, TrackingStatus>> {
+  const rows = await db
+    .select({ jobId: trackedJobs.jobId, status: trackedJobs.status })
+    .from(trackedJobs)
+    .where(eq(trackedJobs.userId, userId));
+  return new Map(rows.map((r) => [r.jobId, normalizeTrackingStatus(r.status)]));
+}
+
 /** Set of job IDs currently saved in the user's tracking shortlist. */
 export async function getTrackedJobIds(userId: string): Promise<Set<number>> {
   const rows = await db
@@ -253,6 +269,7 @@ export function getTrackedJobs(userId: string) {
       publishedAt: jobs.publishedAt,
       fetchedAt: jobs.fetchedAt,
       trackedAt: trackedJobs.createdAt,
+      trackingStatus: trackedJobs.status,
     })
     .from(trackedJobs)
     .innerJoin(
@@ -271,6 +288,7 @@ export async function setJobsTracked(
   userId: string,
   jobIds: number[],
   tracked: boolean,
+  status: TrackingStatus = DEFAULT_TRACKING_STATUS,
 ) {
   const uniqueIds = [...new Set(jobIds)];
   if (uniqueIds.length === 0) return;
@@ -284,7 +302,7 @@ export async function setJobsTracked(
 
     await db
       .insert(trackedJobs)
-      .values(owned.map((row) => ({ userId, jobId: row.id })))
+      .values(owned.map((row) => ({ userId, jobId: row.id, status })))
       .onConflictDoNothing({
         target: [trackedJobs.userId, trackedJobs.jobId],
       });
@@ -299,6 +317,33 @@ export async function setJobsTracked(
         inArray(trackedJobs.jobId, uniqueIds),
       ),
     );
+}
+
+/**
+ * Updates the pipeline status for one or more jobs, adding them to the user's
+ * tracking shortlist if they are not already tracked.
+ */
+export async function setJobTrackingStatus(
+  userId: string,
+  jobIds: number[],
+  status: TrackingStatus,
+) {
+  const uniqueIds = [...new Set(jobIds)];
+  if (uniqueIds.length === 0) return;
+
+  const owned = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.userId, userId), inArray(jobs.id, uniqueIds)));
+  if (owned.length === 0) return;
+
+  await db
+    .insert(trackedJobs)
+    .values(owned.map((row) => ({ userId, jobId: row.id, status })))
+    .onConflictDoUpdate({
+      target: [trackedJobs.userId, trackedJobs.jobId],
+      set: { status },
+    });
 }
 
 /**

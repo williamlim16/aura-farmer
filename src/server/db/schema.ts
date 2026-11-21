@@ -98,6 +98,7 @@ export const trackedJobs = createTable(
       .integer()
       .notNull()
       .references(() => jobs.id, { onDelete: "cascade" }),
+    status: d.varchar({ length: 32 }).default("lead").notNull(),
     createdAt: d
       .timestamp({ withTimezone: true })
       .$defaultFn(() => new Date())
