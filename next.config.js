@@ -6,6 +6,11 @@ import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
 const config = {
+  // Apply Demo: Playwright + serverless Chromium run inside the Node function.
+  serverExternalPackages: ["playwright", "playwright-core", "@sparticuz/chromium"],
+  outputFileTracingIncludes: {
+    "/api/apply-demo/run": ["./test-forms/**/*", "./node_modules/@sparticuz/chromium/bin/**", "./node_modules/.pnpm/@sparticuz+chromium@*/node_modules/@sparticuz/chromium/bin/**"],
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",
