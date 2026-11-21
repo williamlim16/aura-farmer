@@ -33,10 +33,21 @@
 
 ## Verified vs not
 
-- **Verified** (`tests/apply/handoff.e2e.test.ts`):
-  - A plan built from a real worker run is applied to a fresh copy of the form in a plain browser. The right values are filled, the resume is attached, guarded fields stay empty, needed fields are highlighted, and no submission reaches the server.
+- **Verified** (`tests/apply/handoff.e2e.test.ts`). A plan built from a real worker run is applied to a fresh copy of each form in a plain browser:
+  - **Full application:** values filled, resume attached, guarded fields left empty, needed fields highlighted, no submission.
+  - **Greenhouse-style:** searchable yes/no dropdowns, filled by typing then clicking the unique safe match, never Enter.
+  - **Ashby-style:** ARIA radio buttons, plus a display:none resume input.
+  - **Browser-side verification:** after filling, every field is re-read. Anything not confirmed is reported, never assumed.
+  - **A changed page:** answers with no matching field are reported ("had no matching field"), not guessed.
   - Expired plans are refused.
-  - The unpacked extension loads in Chromium, and its bridge stores a plan sent by the app page.
-- **Not automated:** clicking the popup button. Chromium doesn't expose extension popups to tests; the same `filler.js` is what the popup injects.
-- **Not tested** against real Greenhouse, Lever or Ashby pages (we never automate them). Label matching assumes the real form uses the same labels as the run that produced the plan. Fields not found are reported in the popup.
-- **To do for real ATS forms:** react-select comboboxes in `filler.js`, per-ATS label quirks, a production manifest (`host_permissions` for the app origin), and a store listing or enterprise distribution.
+  - The unpacked extension loads in Chromium and stores a plan sent by the app page.
+- **Not automated:** clicking the popup button. Chromium doesn't expose extension popups to tests; the popup injects the same `filler.js`.
+- **Not tested** against real Greenhouse, Lever or Ashby pages (we never automate them).
+
+## Before real users
+
+1. **Production manifest:** list the deployed app origin in `content_scripts.matches` and `background.js` (today: localhost only). Keep `activeTab` + `scripting`; no broad host permissions.
+2. **Distribution:** Chrome Web Store (unlisted) or an enterprise policy. Firefox needs an MV3 port.
+3. **Real-ATS label quirks:** collect anonymised field labels from real postings (read-only) and add fixtures for any mismatch. Async-loaded option lists (for example, location search) may need longer waits.
+4. **Privacy notice:** the plan holds the user's answers and resume for 30 minutes in session storage. Explain this and add a "clear" button.
+5. **Usability test:** the popup shows filled, unconfirmed, needs-you and not-found counts; check users understand them.

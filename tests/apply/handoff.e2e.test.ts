@@ -94,3 +94,60 @@ describe("MV3 extension (real Chromium, unpacked)", () => {
     }
   });
 });
+
+describe("filler on ATS-style forms (fresh page, plain browser)", () => {
+  type Result = { filled: string[]; notFound: string[]; needsInput: string[]; unconfirmed: string[] };
+  async function handoff(form: string) {
+    const { report, context } = await autofillFixture(browser, server, form, { resumePath });
+    await context.close();
+    const plan = buildFillPlan({ id: "app-ats", title: "Engineer", company: "Example Corp", report }, { filename: "cv.pdf", bytes: new Uint8Array(fs.readFileSync(resumePath)) });
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await page.goto(`${server.url}/${form}`);
+    await page.addScriptTag({ path: path.join(EXT, "filler.js") });
+    const result = await page.evaluate((p) => (window as unknown as { __auraApplyPlan: (x: unknown) => Promise<Result> }).__auraApplyPlan(p), plan);
+    return { plan, page, ctx, result };
+  }
+
+  it("Greenhouse-style: fills searchable yes/no dropdowns and confirms them in the browser", async () => {
+    const { plan, page, ctx, result } = await handoff("greenhouse-like.html");
+    try {
+      expect(plan.fields.filter((f) => f.control === "combobox").map((f) => f.value).sort()).toEqual(["No", "Yes"]);
+      expect(result.notFound).toEqual([]);
+      expect(result.unconfirmed).toEqual([]);
+      expect(await page.inputValue("input[name=q1]")).toBe("Yes");
+      expect(await page.inputValue("input[name=q2]")).toBe("No");
+      expect(await page.inputValue("#gender")).toBe("");
+      expect(server.posts).toHaveLength(0);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("Ashby-style: clicks ARIA radio buttons and attaches the resume to a display:none input", async () => {
+    const { page, ctx, result } = await handoff("ashby-like.html");
+    try {
+      expect(result.notFound).toEqual([]);
+      expect(result.unconfirmed).toEqual([]);
+      expect(await page.getAttribute("#auth-q + [role=radiogroup] [role=radio]:first-child", "aria-checked")).toBe("true");
+      expect(await page.evaluate(() => (document.getElementById("_systemfield_resume") as HTMLInputElement).files?.length)).toBe(1);
+      expect(server.posts).toHaveLength(0);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("reports fields it cannot find instead of guessing (page changed since the plan)", async () => {
+    const { report, context } = await autofillFixture(browser, server, "basic.html", { resumePath });
+    await context.close();
+    const plan = buildFillPlan({ id: "app-x", title: null, company: null, report }, null);
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await page.goto(`${server.url}/lever-like.html`); // a different form
+    await page.addScriptTag({ path: path.join(EXT, "filler.js") });
+    const result = await page.evaluate((p) => (window as unknown as { __auraApplyPlan: (x: unknown) => Promise<{ notFound: string[]; filled: string[] }> }).__auraApplyPlan(p), plan);
+    expect(result.notFound.length).toBeGreaterThan(3);
+    expect(await page.textContent("[data-aura-panel]")).toContain("had no matching field");
+    await ctx.close();
+  });
+});

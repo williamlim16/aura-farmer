@@ -18,6 +18,6 @@ const fill = document.getElementById("fill");
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["filler.js"] });
     const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: (p) => window.__auraApplyPlan(p), args: [plan] });
-    status.textContent = `Filled ${result.filled.length}; ${result.needsInput.length} need you; ${result.notFound.length} not found on this page.`;
+    status.textContent = `Filled ${result.filled.length} (${result.unconfirmed.length} unconfirmed); ${result.needsInput.length} need you; ${result.notFound.length} not found on this page. Review, then submit yourself.`;
   });
 })();
