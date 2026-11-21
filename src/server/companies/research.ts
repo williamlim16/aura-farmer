@@ -2,15 +2,19 @@
  * "Ideal companies" research: candidate profile + free-text preferences →
  * a ranked list of real companies, where every claim is sourced.
  *
- *   1. plan     Claude turns preferences + profile into web search queries.
+ *   1. plan     Claude splits the preferences into separate requirements and
+ *               turns them + the profile into web search queries.
  *   2. discover Tavily runs them; Claude shortlists employers named in the
  *               results (each must actually appear in a cited page).
  *   3. research Per company, Tavily searches overview/news, culture/reviews
- *               and open roles. Claude writes facts, a fit assessment and
- *               open roles, each citing a source id plus a verbatim quote.
+ *               and open roles. Claude writes facts, marks each requirement
+ *               met / not met / unknown, and lists open roles, each citing a
+ *               source id plus a verbatim quote.
  *   4. verify   Code checks every quote is really on the cited page and
- *               drops claims that aren't. Companies left with too little
- *               verified evidence are skipped.
+ *               drops claims that aren't (a requirement whose quote fails
+ *               becomes unknown). Fit = requirements met / requirements
+ *               stated. Companies with too little verified evidence are
+ *               skipped.
  *
  * Claude only ever sees fetched page text and is told to use nothing else,
  * so the quote check is what makes "every claim is sourced" enforceable.
@@ -35,7 +39,9 @@ import {
   FACT_CATEGORIES,
   type CompanyResearchResult,
   type CompanyResult,
+  fitSummary,
   type Evidence,
+  type RequirementCheck,
   type Source,
   type SourceKind,
 } from "./types";
@@ -51,6 +57,8 @@ const DISCOVERY_CHARS = 3_000;
 const RESEARCH_CHARS = 6_000;
 /** A company needs at least this many verified facts to be shown. */
 const MIN_FACTS = 2;
+/** Requirements extracted from the preferences, at most. */
+const MAX_REQUIREMENTS = 15;
 
 // ---------------------------------------------------------------------------
 // Claude
@@ -282,6 +290,11 @@ async function loadCandidate(userId: string) {
 // 1. Plan
 
 const PlanSchema = z.object({
+  requirements: z
+    .array(z.string())
+    .describe(
+      'Every distinct requirement the candidate states in their preferences, one per item, as a short checkable phrase close to their wording (e.g. "51-200 employees", "Based in Sydney", "Hybrid or remote", "Flat structure", "Full-time"). Split compound statements into separate items. Include only what the preferences state; nothing from the profile, nothing inferred.',
+    ),
   market: z
     .string()
     .describe(
@@ -302,13 +315,31 @@ async function plan(candidate: string, preferences: string) {
     PlanSchema,
     `You plan web searches that find real employers a job candidate would want to work for, given their profile and their free-text preferences (location, industry, size, culture, work arrangement, employment type, anything else).
 
+First list the candidate's requirements: each separate thing their preferences ask for, so each can later be checked yes/no against a company.
+
 Write queries a search engine answers with pages naming specific companies: industry + location + traits ("Melbourne fintech startups hiring data analysts", "Sydney B2B SaaS companies flat structure"). Vary them so they cover different angles of the preferences. Don't put site: operators or quotes in queries.
 
 ${UNTRUSTED}`,
     `<candidate_profile>\n${candidate}\n</candidate_profile>\n\n<preferences>\n${preferences}\n</preferences>`,
     "low",
   );
+  const seen = new Set<string>();
+  const requirements = out.requirements
+    .map((r) => r.trim())
+    .filter((r) => {
+      const key = normalize(r);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, MAX_REQUIREMENTS);
+  if (requirements.length === 0) {
+    throw new ResearchError(
+      "Couldn't find any specific requirements in your preferences. List what matters to you, e.g. location, company size, work arrangement.",
+    );
+  }
   return {
+    requirements,
     market: out.market.trim(),
     roleKeywords: out.roleKeywords.slice(0, 3),
     queries: out.queries.slice(0, 5),
@@ -420,23 +451,38 @@ const CompanySchema = z.object({
     .describe(
       "Up to 12 facts covering location/offices, industry, size/stage (start-up vs corporate), culture and structure (flat vs hierarchical, cross-functional teams, etc.), work arrangement (remote/hybrid/on-site), employment types.",
     ),
-  fit: z.object({
-    score: z
-      .number()
-      .describe(
-        "1-5: how well the sourced facts match the candidate's preferences and profile. 5 = strong match on most stated preferences.",
-      ),
-    verdict: z.string().describe("One or two sentences summarising the fit."),
-    matches: z
-      .array(z.object({ point: z.string(), ...evidence }))
-      .describe("Preferences the evidence shows are met."),
-    concerns: z
-      .array(z.object({ point: z.string(), ...evidence }))
-      .describe("Preferences the evidence shows are NOT met, or red flags."),
-    unknowns: z
-      .array(z.string())
-      .describe("Stated preferences the sources don't address. Short phrases."),
-  }),
+  checks: z
+    .array(
+      z.object({
+        requirement: z
+          .number()
+          .int()
+          .describe("The requirement's number from <requirements>, e.g. 1."),
+        status: z
+          .enum(["met", "not_met", "unknown"])
+          .describe(
+            "met: a source clearly shows it is satisfied. not_met: a source clearly shows it is not (partly satisfied counts as not_met). unknown: the sources don't settle it.",
+          ),
+        finding: z
+          .string()
+          .nullable()
+          .describe(
+            'What the source shows, briefly, e.g. "About 150 employees" or "Hybrid, 3 days in office". Null when unknown.',
+          ),
+        sourceId: z
+          .string()
+          .nullable()
+          .describe('Id of the source, e.g. "S3". Null when unknown.'),
+        quote: z
+          .string()
+          .nullable()
+          .describe(
+            "A short exact, verbatim excerpt (5-40 words) from that source that shows the finding. Copy characters exactly. Null when unknown.",
+          ),
+      }),
+    )
+    .describe("Exactly one entry for each numbered requirement, in order."),
+  verdict: z.string().describe("One or two sentences summarising the fit."),
   openRoles: z
     .array(
       z.object({
@@ -464,6 +510,7 @@ async function researchCompany(
   ctx: {
     candidate: string;
     preferences: string;
+    requirements: string[];
     market: string;
     roles: string[];
   },
@@ -504,16 +551,16 @@ async function researchCompany(
 
   const out = await ask(
     CompanySchema,
-    `You research one company for a job candidate, using ONLY the provided sources. Every fact, fit point and open role must cite one source id and include a verbatim quote from that source; a program checks each quote against the page and deletes anything that doesn't match. Never use your own background knowledge, and never guess: if the sources don't say it, leave it out (list unaddressed preferences under unknowns).
+    `You research one company for a job candidate, using ONLY the provided sources. Every fact, requirement check and open role must cite one source id and include a verbatim quote from that source; a program checks each quote against the page and deletes anything that doesn't match. Never use your own background knowledge, and never guess: if the sources don't say it, leave it out.
 
 Make sure each source is actually about "${name}" (not a similarly named company) before citing it.
 
 ${SOURCE_QUALITY_RULES}
 
-For the fit score, weigh only evidenced facts against the candidate's stated preferences and background; missing information lowers confidence but is not a mismatch.
+Check each of the candidate's numbered requirements against the sources, one at a time. Be literal: if they want 51-200 employees and a source says about 150, it's met; if a source says 1,000+, it's not_met; if no source gives a headcount, it's unknown. Don't mark met or not_met without a quote that shows it.
 
 ${UNTRUSTED}`,
-    `<company>${name}</company>\n\n<candidate_profile>\n${ctx.candidate}\n</candidate_profile>\n\n<preferences>\n${ctx.preferences}\n</preferences>\n\n<sources>\n${pool.map((s, i) => sourceBlock(`S${i + 1}`, s)).join("\n\n")}\n</sources>`,
+    `<company>${name}</company>\n\n<candidate_profile>\n${ctx.candidate}\n</candidate_profile>\n\n<preferences>\n${ctx.preferences}\n</preferences>\n\n<requirements>\n${ctx.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n</requirements>\n\n<sources>\n${pool.map((s, i) => sourceBlock(`S${i + 1}`, s)).join("\n\n")}\n</sources>`,
     "medium",
   );
 
@@ -557,8 +604,29 @@ ${UNTRUSTED}`,
     xs.filter((x): x is T => x !== null);
 
   const facts = verifiedOnly(out.facts.slice(0, 12).map(verify));
-  const matches = verifiedOnly(out.fit.matches.map(verify));
-  const concerns = verifiedOnly(out.fit.concerns.map(verify));
+
+  // One check per requirement. A met/not_met verdict only stands if its quote
+  // is on the page; otherwise (or if Claude skipped it) it's unknown.
+  const checks: RequirementCheck[] = ctx.requirements.map((_, i) => {
+    const c = out.checks.find((x) => x.requirement === i + 1);
+    if (!c || c.status === "unknown") {
+      return { requirement: i, status: "unknown", finding: null, evidence: null };
+    }
+    const v =
+      c.sourceId && c.quote
+        ? verify({ sourceId: c.sourceId, quote: c.quote })
+        : null;
+    if (!v) {
+      if (!c.sourceId || !c.quote) dropped++;
+      return { requirement: i, status: "unknown", finding: null, evidence: null };
+    }
+    return {
+      requirement: i,
+      status: c.status,
+      finding: c.finding?.trim() ?? null,
+      evidence: { source: v.source, quote: v.quote },
+    };
+  });
 
   const roles = verifiedOnly(out.openRoles.slice(0, 5).map(verify)).map((r) => {
     const page = pool.find((s) => s.url === sources[r.source]!.url)!;
@@ -598,11 +666,8 @@ ${UNTRUSTED}`,
     company: {
       name,
       website: websiteVerified ? out.website : null,
-      fitScore: Math.min(5, Math.max(1, Math.round(out.fit.score * 10) / 10)),
-      verdict: out.fit.verdict.trim(),
-      matches,
-      concerns,
-      unknowns: out.fit.unknowns.slice(0, 8),
+      verdict: out.verdict.trim(),
+      checks,
       facts,
       openRoles,
       sources,
@@ -634,7 +699,7 @@ export async function runCompanyResearch(userId: string) {
 
     await setProgress(userId, "Planning searches");
     const candidate = await loadCandidate(userId);
-    const { market, roleKeywords, queries } = await plan(
+    const { requirements, market, roleKeywords, queries } = await plan(
       candidate,
       row.preferences,
     );
@@ -654,6 +719,7 @@ export async function runCompanyResearch(userId: string) {
       `Researching ${shortlist.length} companies (0 done)`,
     );
     const result: CompanyResearchResult = {
+      requirements,
       companies: [],
       skipped: [],
       droppedClaims: 0,
@@ -667,6 +733,7 @@ export async function runCompanyResearch(userId: string) {
           const r = await researchCompany(name, discoverySources, {
             candidate,
             preferences: row.preferences,
+            requirements,
             market,
             roles: roleKeywords,
           });
@@ -688,7 +755,12 @@ export async function runCompanyResearch(userId: string) {
     );
     await progressWrites;
 
-    result.companies.sort((a, b) => b.fitScore - a.fitScore);
+    // Most requirements met first; ties go to fewer known misses.
+    result.companies.sort((a, b) => {
+      const fa = fitSummary(a);
+      const fb = fitSummary(b);
+      return fb.met - fa.met || fa.notMet - fb.notMet;
+    });
     await db
       .update(companySearches)
       .set({

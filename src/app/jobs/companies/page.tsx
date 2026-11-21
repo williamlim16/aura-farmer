@@ -88,7 +88,12 @@ export default async function CompaniesPage() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {result.companies.map((c, i) => (
-                <CompanyCard key={c.name} company={c} index={i} />
+                <CompanyCard
+                  key={c.name}
+                  company={c}
+                  requirements={result.requirements}
+                  index={i}
+                />
               ))}
             </div>
           )}

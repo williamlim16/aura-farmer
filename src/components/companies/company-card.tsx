@@ -1,7 +1,8 @@
 import {
   Briefcase,
-  CircleAlert,
   CircleCheck,
+  CircleHelp,
+  CircleX,
   ExternalLink,
 } from "lucide-react";
 
@@ -10,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   FACT_CATEGORIES,
   FACT_CATEGORY_LABELS,
+  fitSummary,
   type CompanyResult,
   type Evidence,
 } from "~/server/companies/types";
@@ -46,11 +48,15 @@ function Cite({ company, e }: { company: CompanyResult; e: Evidence }) {
 
 export function CompanyCard({
   company,
+  requirements,
   index,
 }: {
   company: CompanyResult;
+  /** The run's requirements; `company.checks` index into these. */
+  requirements: string[];
   index: number;
 }) {
+  const fit = fitSummary(company);
   const factsByCategory = FACT_CATEGORIES.map((cat) => ({
     cat,
     facts: company.facts.filter((f) => f.category === cat),
@@ -60,7 +66,12 @@ export function CompanyCard({
     <Card className="h-full">
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="teal">Fit {company.fitScore}/5</Badge>
+          <Badge
+            variant="teal"
+            title={`${fit.met} of your ${fit.total} requirements met · ${fit.notMet} not met · ${fit.unknown} unknown`}
+          >
+            Fit {fit.met}/{fit.total}
+          </Badge>
           {company.website && (
             <a
               href={company.website}
@@ -77,43 +88,49 @@ export function CompanyCard({
       </CardHeader>
 
       <CardContent className="space-y-5 text-sm">
-        {(company.matches.length > 0 || company.concerns.length > 0) && (
-          <ul className="space-y-1.5">
-            {company.matches.map((m, i) => (
-              <li key={`m${i}`} className="flex gap-2">
+        <ul className="space-y-1.5">
+          {company.checks.map((c) => (
+            <li key={c.requirement} className="flex gap-2">
+              {c.status === "met" ? (
                 <CircleCheck
-                  aria-label="Matches"
+                  aria-label="Met"
                   className="text-aura-secondary mt-0.5 size-4 shrink-0"
                 />
-                <span>
-                  {m.point}
-                  <Cite company={company} e={m} />
-                </span>
-              </li>
-            ))}
-            {company.concerns.map((c, i) => (
-              <li key={`c${i}`} className="flex gap-2">
-                <CircleAlert
-                  aria-label="Concern"
+              ) : c.status === "not_met" ? (
+                <CircleX
+                  aria-label="Not met"
                   className="text-destructive mt-0.5 size-4 shrink-0"
                 />
-                <span>
-                  {c.point}
-                  <Cite company={company} e={c} />
+              ) : (
+                <CircleHelp
+                  aria-label="Unknown"
+                  className="text-muted-foreground mt-0.5 size-4 shrink-0"
+                />
+              )}
+              <span>
+                <span className="font-medium">
+                  {requirements[c.requirement]}
                 </span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {company.unknowns.length > 0 && (
-          <p className="text-muted-foreground text-xs">
-            <span className="text-foreground font-medium">
-              Not found in sources:
-            </span>{" "}
-            {company.unknowns.join("; ")}
-          </p>
-        )}
+                {c.evidence ? (
+                  <>
+                    {c.finding && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {c.finding}
+                      </span>
+                    )}
+                    <Cite company={company} e={c.evidence} />
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · not found in sources
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
 
         <dl className="space-y-2">
           {factsByCategory.map(({ cat, facts }) => (
