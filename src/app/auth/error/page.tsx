@@ -30,7 +30,7 @@ export default async function Page({
     <AuthShell
       eyebrow="Authentication"
       headline="We hit a snag verifying your session."
-      subcopy="Don't worry—you can retry signing in to return to your curated jobs and applications anytime."
+      subcopy="Don't worry—you can retry signing in to return to your tailored resumes, CVs, and tracked jobs anytime."
     >
       <Card>
         <CardHeader className="space-y-3">

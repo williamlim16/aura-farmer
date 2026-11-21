@@ -12,7 +12,7 @@ export default function Page() {
   return (
     <AuthShell
       eyebrow="Account recovery"
-      headline="Back to your job applications in moments."
+      headline="Back to your tailored CVs and tracked jobs in moments."
       subcopy="We'll send a one-time recovery link straight to your inbox so you can set a fresh password securely."
     >
       <ForgotPasswordForm />

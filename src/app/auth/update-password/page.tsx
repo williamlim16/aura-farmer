@@ -13,7 +13,7 @@ export default function Page() {
     <AuthShell
       eyebrow="Security update"
       headline="Set a fresh password for your account."
-      subcopy="Choose a strong, unique password to keep your resume profile and automated application sessions secure."
+      subcopy="Choose a strong, unique password to keep your resume profile, tailored CVs, and tracked jobs secure."
     >
       <UpdatePasswordForm />
     </AuthShell>
