@@ -30,6 +30,10 @@ const GUARD_REASON: Record<string, string> = {
 
 /** Final guard. Runs after every tier, so even an LLM answer cannot reach these fields. */
 export function guardDecision(cls: Classification, d: Decision, field: FormField): Decision {
+  // An answer the user explicitly typed for this exact question is the human's
+  // own answer; it may fill sensitive fields (EEO, consent). Only the rule tier
+  // sets userProvided, so no model output can take this path.
+  if (d.action === "fill" && d.tier === "rule" && d.userProvided === true) return d;
   if (ALWAYS_HUMAN_KINDS.has(cls.kind)) {
     return { action: "human", reason: GUARD_REASON[cls.kind] ?? "Sensitive field.", tier: "guard" };
   }

@@ -43,6 +43,17 @@ async function fillOne(page: Target, fd: FieldDecision, resumePath: string | nul
     if (accept && !accept.split(",").some((a) => { const t = a.trim(); return t === `.${ext}` || t === "*/*" || (ext === "pdf" && t === "application/pdf") || (ext === "docx" && t.includes("wordprocessingml")); })) {
       throw new Error(`this upload only accepts ${field.accept}; your resume is .${ext}`);
     }
+    // Mark the upload's section so read-back can confirm the file even if the
+    // ATS replaces the <input> after uploading (Greenhouse does).
+    const fileName = resumePath.split(/[\\/]/).pop()!;
+    await loc.evaluate((el, a) => {
+      let c: HTMLElement | null = el.parentElement;
+      for (let i = 0; c && i < 6; i++, c = c.parentElement) {
+        if (a.label && (c.innerText || "").toLowerCase().includes(a.label.toLowerCase())) break;
+      }
+      (c ?? el.parentElement)?.setAttribute("data-af-upload", a.id);
+      (c ?? el.parentElement)?.setAttribute("data-af-file", a.fileName);
+    }, { id: field.id, label: field.label, fileName }).catch(() => undefined);
     await loc.setInputFiles(resumePath);
     return;
   }
@@ -51,7 +62,7 @@ async function fillOne(page: Target, fd: FieldDecision, resumePath: string | nul
 
   switch (field.control) {
     case "combobox":
-      await fillCombobox(page, loc, String(value), pickOption);
+      await fillCombobox(page, loc, String(value), pickOption, decision.hint);
       return;
     case "select": {
       const i = pickOption(field.options, String(value));

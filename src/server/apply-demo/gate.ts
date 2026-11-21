@@ -10,7 +10,13 @@
  * The run API additionally requires a short-lived HMAC token that only the
  * demo page issues (see demo-token.ts).
  */
-export const APPLY_DEMO_PATHS = ["/apply-demo", "/api/apply-demo/run"] as const;
+export const APPLY_DEMO_PATHS = [
+  "/apply-demo",
+  "/api/apply-demo/run",
+  "/api/apply-demo/real/parse",
+  "/api/apply-demo/real/review",
+  "/api/apply-demo/real/submit",
+] as const;
 
 export function applyDemoEnabled(env: Record<string, string | undefined> = process.env): boolean {
   if (env.APPLY_DEMO_ENABLED !== "1") return false;

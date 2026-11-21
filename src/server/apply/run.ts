@@ -223,7 +223,14 @@ export async function runAutofill(
     steps.push({ step, advanced: true });
   }
 
-  const rb: Map<string, ReadBack> = await readBack(target, all.filter((a) => !finalBack.has(a.field.id)).map((a) => a.field.id));
+  const finalIds = all.filter((a) => !finalBack.has(a.field.id)).map((a) => a.field.id);
+  let rb: Map<string, ReadBack> = await readBack(target, finalIds);
+  // Uploads finish asynchronously (the ATS shows the file name when its upload completes): wait for them.
+  const pendingUploads = () => all.filter((a) => a.decision.action === "upload" && a.fillOk !== false && finalIds.includes(a.field.id) && !rb.get(a.field.id)?.hasFile);
+  for (let waited = 0; pendingUploads().length && waited < 8000; waited += 500) {
+    await target.waitForTimeout(500);
+    rb = await readBack(target, finalIds);
+  }
   finalBack.forEach((v, k) => rb.set(k, v));
   const fields: FieldReport[] = all.map((a) => {
     const d = a.decision;

@@ -11,14 +11,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { chromium, type Browser, type BrowserContext } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 import { DecisionEngine } from "~/lib/apply/decision/engine";
 import type { DecisionProvider } from "~/lib/apply/decision/types";
 import type { CandidateProfile } from "~/lib/profile/schema";
 import type { ResumeKind } from "~/lib/resume/validate";
 import { runAutofill, type AutofillReport } from "~/server/apply/run";
-import { installSubmitGuard } from "~/server/apply/submit-guard";
+import { installSubmitGuard, type SubmitGuard, type SubmitGuardOptions } from "~/server/apply/submit-guard";
 
 export interface RunApplicationInput {
   formUrl: string;
@@ -36,6 +36,18 @@ export interface RunApplicationInput {
   signal?: AbortSignal;
   /** Page console errors and failed requests, for execution logs. */
   onEvent?: (level: "info" | "warn", message: string) => void;
+  /**
+   * Custom egress policy (real ATS pages). When set it replaces the
+   * allowedOrigins check for subresources; the start URL must still be in
+   * allowedOrigins. Return false to block the request.
+   */
+  egress?: (url: string) => Promise<boolean>;
+  /** Submit-guard options (the guard itself is always installed). */
+  guard?: SubmitGuardOptions;
+  /** Screenshot format; JPEG keeps large real pages under response limits. */
+  screenshot?: { type: "png" } | { type: "jpeg"; quality: number };
+  /** Wait for network idle after load (real pages render client-side). */
+  waitForIdleMs?: number;
 }
 
 export class RunAbortedError extends Error {
@@ -50,6 +62,8 @@ export interface RunApplicationResult {
   screenshotPng: Buffer;
   blockedEgress: string[];
   context?: BrowserContext;
+  page?: Page;
+  guard?: SubmitGuard;
 }
 
 function safeFilename(name: string, kind: ResumeKind) {
@@ -89,27 +103,30 @@ export async function runApplication(input: RunApplicationInput): Promise<RunApp
       } catch {
         /* data:, about: etc. */
       }
-      if (origin && !allowed.has(origin) && !url.startsWith("data:")) {
+      const ok = url.startsWith("data:") || url.startsWith("blob:") || (input.egress ? await input.egress(url) : !origin || allowed.has(origin));
+      if (!ok) {
         blockedEgress.push(url.slice(0, 200));
         await route.abort("blockedbyclient");
         return;
       }
       await route.fallback();
     });
-    const guard = await installSubmitGuard(context);
+    const guard = await installSubmitGuard(context, input.guard);
     const page = await context.newPage();
     page.on("console", (m) => {
       if (m.type() === "error") input.onEvent?.("warn", `Page console error: ${m.text().slice(0, 200)}`);
     });
     page.on("pageerror", (e) => input.onEvent?.("warn", `Page script error: ${e.message.slice(0, 200)}`));
-    await page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout: 15_000 });
+    await page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
+    if (input.waitForIdleMs) await page.waitForLoadState("networkidle", { timeout: input.waitForIdleMs }).catch(() => undefined);
 
     const engine = new DecisionEngine(input.providers);
     const report = await runAutofill(page, engine, { profile: input.profile, hasResume: !!input.resume, job: input.job }, { resumePath, guard });
-    const screenshotPng = await page.screenshot({ fullPage: true });
+    const shot = input.screenshot ?? { type: "png" as const };
+    const screenshotPng = await page.screenshot({ fullPage: true, ...(shot.type === "jpeg" ? { type: "jpeg", quality: shot.quality } : {}) });
     if (input.signal?.aborted) throw new RunAbortedError(String(input.signal.reason ?? "aborted"));
 
-    if (input.keepOpen) return { report, screenshotPng, blockedEgress, context };
+    if (input.keepOpen) return { report, screenshotPng, blockedEgress, context, page, guard };
     return { report, screenshotPng, blockedEgress };
   } catch (e) {
     if (input.signal?.aborted) throw new RunAbortedError(String(input.signal.reason ?? "aborted"));

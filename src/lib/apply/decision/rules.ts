@@ -39,7 +39,7 @@ function countryInLabel(label: string, countries: string[]): string | null {
 
 const CONTACT_KINDS = new Set<FieldKind>(["first_name", "last_name", "full_name", "email", "phone", "linkedin", "github", "website"]);
 
-const normQ = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+export const normQ = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
 function contactValue(p: CandidateProfile, kind: FieldKind): { value: string; confidence: number } | null {
   const c = p.contact;
@@ -67,7 +67,10 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
 
   // A saved answer for this exact question wins for any non-sensitive field.
   const saved = prefs.savedAnswers?.[normQ(field.label)];
-  if (saved && field.label) return fitToField(field, saved, 1);
+  if (saved && field.label) {
+    const d = fitToField(field, saved, 1);
+    return d?.action === "fill" ? { ...d, userProvided: true, note: "Your explicit answer" } : d;
+  }
 
   // A user-approved draft answer (from application preparation) for motivation questions.
   const why = prefs.savedAnswers?.["@why_company"];
@@ -148,7 +151,8 @@ export function decideByRule(input: DecisionInput, ctx: DecisionContext): Decisi
       if (!v && CONTACT_KINDS.has(cls.kind)) return human("Not in your profile. Add it on your profile page or fill it in yourself.");
       // "City" fields want "Melbourne", not "Melbourne, VIC, Australia".
       if (v && cls.kind === "location" && /\bcity\b|\bsuburb\b/i.test(field.label) && !/country|address/i.test(field.label)) {
-        return fitToField(field, v.value.split(",")[0]!.trim(), Math.min(v.confidence, cls.confidence));
+        const d = fitToField(field, v.value.split(",")[0]!.trim(), Math.min(v.confidence, cls.confidence));
+        return d?.action === "fill" ? { ...d, hint: v.value } : d;
       }
       return v ? fitToField(field, v.value, Math.min(v.confidence, cls.confidence)) : null;
     }

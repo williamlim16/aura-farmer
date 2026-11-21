@@ -31,7 +31,21 @@ export async function extractForm(target: Page | Frame): Promise<FormField[]> {
     const textOf = (el: Element | null) => clean(el?.textContent);
     const win = window as unknown as { __afSeq?: number };
 
+    const GENERIC_UPLOAD = /^(attach|upload|browse|choose( a)? file|select( a)? file|add( a)? file|drop files? here)$/i;
     function labelFor(el: HTMLElement): { label: string; source: FormField["labelSource"] } {
+      const base = labelForBase(el);
+      if (!(el instanceof HTMLInputElement && el.type === "file") || (base.label && !GENERIC_UPLOAD.test(base.label))) return base;
+      // Upload buttons are often all labelled "Attach": use the section heading ("Resume/CV", "Cover Letter").
+      let node: Element | null = el;
+      for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+        let prev = node.previousElementSibling;
+        while (prev && (!textOf(prev) || GENERIC_UPLOAD.test(textOf(prev)))) prev = prev.previousElementSibling;
+        if (prev && !prev.querySelector("input,select,textarea") && textOf(prev).length <= 120) return { label: textOf(prev), source: "nearby-text" };
+      }
+      const named = ((el.id !== "" ? el.id : el.getAttribute("name") ?? "")).replace(/[_-]+/g, " ").trim();
+      return named ? { label: named, source: "name" } : base;
+    }
+    function labelForBase(el: HTMLElement): { label: string; source: FormField["labelSource"] } {
       const id = el.id;
       if (id) {
         const l = document.querySelector(`label[for="${CSS.escape(id)}"]`);

@@ -37,7 +37,10 @@ export async function readBack(page: Page | Frame, ids: string[]): Promise<Map<s
         return { id, value: checked.length ? checked.join("; ") : null, hasFile: false };
       }
       const el = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`[data-af-id="${id}"]`);
-      if (!el) return { id, value: null, hasFile: false };
+      // Upload section shows the uploaded file's name (the input may have been replaced).
+      const up = document.querySelector<HTMLElement>(`[data-af-upload="${id}"]`);
+      const fileShown = !!up && !!up.dataset.afFile && (up.innerText || "").includes(up.dataset.afFile);
+      if (!el) return { id, value: null, hasFile: fileShown };
       if (el.getAttribute("role") === "combobox") {
         // Custom dropdown: the chosen label is rendered next to the input.
         let root: HTMLElement | null = el.parentElement;
@@ -51,7 +54,7 @@ export async function readBack(page: Page | Frame, ids: string[]): Promise<Map<s
         return { id, value: o && o.value !== "" ? (o.textContent ?? "").replace(/\s+/g, " ").trim() : null, hasFile: false };
       }
       if (el instanceof HTMLInputElement && el.type === "checkbox") return { id, value: el.checked, hasFile: false };
-      if (el instanceof HTMLInputElement && el.type === "file") return { id, value: null, hasFile: (el.files?.length ?? 0) > 0 };
+      if (el instanceof HTMLInputElement && el.type === "file") return { id, value: null, hasFile: (el.files?.length ?? 0) > 0 || fileShown };
       return { id, value: el.value || null, hasFile: false, invalid: invalidOf(el) };
     });
   }, ids);
@@ -67,7 +70,12 @@ export function matches(fd: FieldDecision, rb: ReadBack | undefined): boolean {
   if (d.action === "upload") return rb.hasFile;
   if (d.action !== "fill") return false;
   if (typeof rb.value === "boolean") return rb.value === (d.value === true || norm(d.value) === "yes");
-  if (fd.field.control === "combobox") return norm(rb.value) === norm(d.value) || norm(rb.value).includes(norm(d.value));
+  if (fd.field.control === "combobox") {
+    const shown = norm(rb.value);
+    const want = norm(d.value);
+    // Rendered selection may be the full option or a shortened display ("+61" for "Australia +61").
+    return shown === want || (want.length > 0 && shown.includes(want)) || (shown.length >= 2 && want.includes(shown));
+  }
   if (fd.field.control === "tel") return norm(rb.value).replace(/\D/g, "") === norm(d.value).replace(/\D/g, "");
   return norm(rb.value) === norm(d.value);
 }

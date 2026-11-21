@@ -64,7 +64,18 @@ export interface Classification {
 export type DecisionTier = "rule" | "jev" | "llm";
 
 export type Decision =
-  | { action: "fill"; value: string | boolean; tier: DecisionTier; confidence: number; reviewRequired?: boolean; note?: string }
+  | {
+      action: "fill";
+      value: string | boolean;
+      tier: DecisionTier;
+      confidence: number;
+      reviewRequired?: boolean;
+      note?: string;
+      /** Extra context for choosing among async options (e.g. the full stated location for a city picker). */
+      hint?: string;
+      /** The user typed this exact answer for this exact question (only rule-tier saved answers set it). */
+      userProvided?: boolean;
+    }
   | { action: "upload"; file: "resume"; tier: DecisionTier; confidence: number }
   | { action: "skip"; reason: string; tier: DecisionTier | "guard" }
   | { action: "human"; reason: string; tier: DecisionTier | "guard" };
