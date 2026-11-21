@@ -32,12 +32,15 @@ export async function getCompanySearch(
   const stale =
     row.status === "running" &&
     Date.now() - row.updatedAt.getTime() > STALE_RUN_MS;
+  const result = (row.result as CompanyResearchResult | null) ?? null;
   return {
     preferences: row.preferences,
     status: stale ? "failed" : (row.status as CompanySearchState["status"]),
     progress: stale ? null : row.progress,
     error: stale ? "The search timed out. Please try again." : row.error,
-    result: (row.result as CompanyResearchResult | null) ?? null,
+    // Results saved before requirement-based fit scoring can't be shown;
+    // the user re-runs the search to get the new format.
+    result: Array.isArray(result?.requirements) ? result : null,
     updatedAt: row.updatedAt,
   };
 }
