@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # No secrets in CI: env validation is skipped, tests use in-memory
+      # storage/repos (vitest.config.ts), a local PGlite database and a local
+      # mock auth server. Nothing reaches Supabase or any paid API.
+      SKIP_ENV_VALIDATION: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Tests (unit, contract, browser, Next.js end-to-end)
+        run: pnpm test
+      - name: Production build
+        # main's next/font Google Fonts fetch is intermittently flaky; retry once.
+        run: pnpm build || (sleep 10 && pnpm build)
