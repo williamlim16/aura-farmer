@@ -1,8 +1,13 @@
-import { type NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
 import { updateSession } from '~/lib/supabase/middleware'
+import { applyDemoEnabled, isApplyDemoPath } from '~/server/apply-demo/gate'
 
 export async function middleware(request: NextRequest) {
+  // Apply Demo: exactly /apply-demo and /api/apply-demo/run skip the Supabase
+  // login, and only when enabled on a non-production deployment (see gate.ts).
+  // Every other route is unchanged.
+  if (isApplyDemoPath(request.nextUrl.pathname) && applyDemoEnabled()) return NextResponse.next()
   return await updateSession(request)
 }
 

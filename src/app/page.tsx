@@ -208,7 +208,7 @@ export default async function HomePage() {
               {/* Only on deployments with the Apply Demo enabled (never production). */}
               {showApplyDemo && (
                 <Link
-                  href={user ? "/apply-demo" : "/auth/login?next=/apply-demo"}
+                  href="/apply-demo"
                   className={buttonVariants({ variant: "default", size: "lg" })}
                   data-testid="try-application-autofill"
                 >
