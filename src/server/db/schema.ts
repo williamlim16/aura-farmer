@@ -1,7 +1,8 @@
 // Example model schema from the Drizzle docs
 // https://orm.drizzle.team/docs/sql-schema-declaration
 
-import { index, pgTableCreator } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { index, pgTableCreator, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
  * This is an example of how to use the multi-project schema feature of Drizzle ORM. Use the same
@@ -24,3 +25,191 @@ export const posts = createTable(
   }),
   (t) => [index("name_idx").on(t.name)],
 );
+
+/**
+ * Job titles / search terms a user wants to be matched against.
+ * `userId` is the Supabase auth user id (the JWT `sub` claim).
+ *
+ * RLS is enabled with no policies, so these tables are not reachable through
+ * Supabase's public REST API — only through our server via DATABASE_URL.
+ */
+export const jobKeywords = createTable(
+  "job_keyword",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    keyword: d.varchar({ length: 120 }).notNull(),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [uniqueIndex("job_keyword_user_keyword_idx").on(t.userId, t.keyword)],
+).enableRLS();
+
+/** Job postings found by Tavily for a user's keywords. One row per (user, url). */
+export const jobs = createTable(
+  "job",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    /** The keyword that produced this result. */
+    keyword: d.varchar({ length: 120 }).notNull(),
+    /** "seek" | "indeed" | "linkedin" */
+    source: d.varchar({ length: 32 }).notNull(),
+    title: d.text().notNull(),
+    url: d.text().notNull(),
+    /** Numeric id from the posting URL; higher = posted more recently (per source). */
+    postingId: d.bigint({ mode: "number" }),
+    snippet: d.text(),
+    /** Tavily relevance score, 0–1. */
+    score: d.real(),
+    publishedAt: d.timestamp({ withTimezone: true }),
+    fetchedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [
+    uniqueIndex("job_user_url_idx").on(t.userId, t.url),
+    index("job_user_fetched_idx").on(t.userId, t.fetchedAt),
+  ],
+).enableRLS();
+
+/** Core candidate details and personal summary tied 1:1 to a Supabase user ID. */
+export const userProfiles = createTable(
+  "user_profile",
+  (d) => ({
+    id: d.uuid().primaryKey().defaultRandom(),
+    userId: d.uuid("user_id").notNull().unique(),
+    fullName: d.varchar("full_name", { length: 256 }),
+    headline: d.varchar("headline", { length: 256 }),
+    location: d.varchar("location", { length: 256 }),
+    phone: d.varchar("phone", { length: 64 }),
+    websiteUrl: d.varchar("website_url", { length: 512 }),
+    linkedinUrl: d.varchar("linkedin_url", { length: 512 }),
+    githubUrl: d.varchar("github_url", { length: 512 }),
+    summary: d.text("summary"),
+    skills: d.text("skills"),
+    createdAt: d
+      .timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp("updated_at", { withTimezone: true })
+      .$onUpdate(() => new Date()),
+  }),
+  (t) => [index("user_profile_user_id_idx").on(t.userId)],
+);
+
+/** Work experience entries owned by the authenticated user. */
+export const experiences = createTable(
+  "experience",
+  (d) => ({
+    id: d.uuid().primaryKey().defaultRandom(),
+    userId: d.uuid("user_id").notNull(),
+    jobTitle: d.varchar("job_title", { length: 256 }).notNull(),
+    company: d.varchar("company", { length: 256 }).notNull(),
+    employmentType: d.varchar("employment_type", { length: 128 }),
+    location: d.varchar("location", { length: 256 }),
+    startDate: d.varchar("start_date", { length: 64 }).notNull(),
+    endDate: d.varchar("end_date", { length: 64 }),
+    isCurrent: d.boolean("is_current").default(false).notNull(),
+    description: d.text("description"),
+    createdAt: d
+      .timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp("updated_at", { withTimezone: true })
+      .$onUpdate(() => new Date()),
+  }),
+  (t) => [index("experience_user_id_idx").on(t.userId)],
+);
+
+/** Education entries owned by the authenticated user. */
+export const educations = createTable(
+  "education",
+  (d) => ({
+    id: d.uuid().primaryKey().defaultRandom(),
+    userId: d.uuid("user_id").notNull(),
+    school: d.varchar("school", { length: 256 }).notNull(),
+    degree: d.varchar("degree", { length: 256 }).notNull(),
+    fieldOfStudy: d.varchar("field_of_study", { length: 256 }),
+    location: d.varchar("location", { length: 256 }),
+    startDate: d.varchar("start_date", { length: 64 }).notNull(),
+    endDate: d.varchar("end_date", { length: 64 }),
+    isCurrent: d.boolean("is_current").default(false).notNull(),
+    grade: d.varchar("grade", { length: 128 }),
+    description: d.text("description"),
+    createdAt: d
+      .timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp("updated_at", { withTimezone: true })
+      .$onUpdate(() => new Date()),
+  }),
+  (t) => [index("education_user_id_idx").on(t.userId)],
+);
+
+/** Uploaded resume files stored in Supabase Storage and owned by the authenticated user. */
+export const resumes = createTable(
+  "resume",
+  (d) => ({
+    id: d.uuid().primaryKey().defaultRandom(),
+    userId: d.uuid("user_id").notNull(),
+    fileName: d.varchar("file_name", { length: 512 }).notNull(),
+    storagePath: d.varchar("storage_path", { length: 1024 }).notNull(),
+    bucketId: d
+      .varchar("bucket_id", { length: 256 })
+      .default("aura-farmer-bucket")
+      .notNull(),
+    mimeType: d.varchar("mime_type", { length: 128 }).notNull(),
+    fileSize: d.integer("file_size").notNull(),
+    createdAt: d
+      .timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: d
+      .timestamp("updated_at", { withTimezone: true })
+      .$onUpdate(() => new Date()),
+  }),
+  (t) => [index("resume_user_id_idx").on(t.userId)],
+);
+
+export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
+  experiences: many(experiences),
+  educations: many(educations),
+  resumes: many(resumes),
+}));
+
+export const experiencesRelations = relations(experiences, ({ one }) => ({
+  profile: one(userProfiles, {
+    fields: [experiences.userId],
+    references: [userProfiles.userId],
+  }),
+}));
+
+export const educationsRelations = relations(educations, ({ one }) => ({
+  profile: one(userProfiles, {
+    fields: [educations.userId],
+    references: [userProfiles.userId],
+  }),
+}));
+
+export const resumesRelations = relations(resumes, ({ one }) => ({
+  profile: one(userProfiles, {
+    fields: [resumes.userId],
+    references: [userProfiles.userId],
+  }),
+}));
+
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type NewUserProfile = typeof userProfiles.$inferInsert;
+export type Experience = typeof experiences.$inferSelect;
+export type NewExperience = typeof experiences.$inferInsert;
+export type Education = typeof educations.$inferSelect;
+export type NewEducation = typeof educations.$inferInsert;
+export type Resume = typeof resumes.$inferSelect;
+export type NewResume = typeof resumes.$inferInsert;
