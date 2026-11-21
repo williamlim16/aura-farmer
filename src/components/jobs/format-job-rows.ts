@@ -1,7 +1,7 @@
 import { postedLabel } from "~/components/jobs/job-card";
 import type { JobRow } from "~/components/jobs/jobs-table";
 import type { TrackingStatus } from "~/lib/tracking-status";
-import { JOB_SOURCES, type JobSource } from "~/server/job-boards";
+import { sourceLabel } from "~/server/job-boards";
 import type { TailoredResumeStatus } from "~/server/tailored-resumes";
 
 export interface FormattableJob {
@@ -49,7 +49,7 @@ export function formatJobRows(
     title: job.title,
     url: job.url,
     source: job.source,
-    sourceLabel: JOB_SOURCES[job.source as JobSource]?.label ?? job.source,
+    sourceLabel: sourceLabel(job.source),
     keyword: job.keyword,
     keywordTracked: trackedKeywords.has(job.keyword),
     tracked: trackedStatuses.has(job.id),
