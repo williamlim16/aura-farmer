@@ -31,6 +31,7 @@ import {
   setJobsTrackedAction,
   setJobTrackingStatusAction,
 } from "~/app/jobs/actions";
+import { TailorResumeCell } from "~/components/jobs/tailor-resume-cell";
 import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -42,6 +43,7 @@ import {
   type TrackingStatus,
 } from "~/lib/tracking-status";
 import { cn } from "~/lib/utils";
+import type { TailoredResumeStatus } from "~/server/tailored-resumes";
 
 /** A job row, pre-formatted on the server so labels hydrate identically. */
 export interface JobRow {
@@ -69,6 +71,8 @@ export interface JobRow {
   foundAt: number;
   foundLabel: string;
   foundTitle: string;
+  /** Tailored resume for this job (Tracking table only); null if none yet. */
+  tailored?: TailoredResumeStatus | null;
 }
 
 type SortKey = "title" | "company" | "status" | "posted" | "found";
@@ -221,6 +225,9 @@ export function JobsTable({
     (current + 1) * PAGE_SIZE,
   );
 
+  // Recommendations + Resume columns only appear on the Tracking table.
+  const columnCount = mode === "tracking" ? 11 : 9;
+
   const allVisibleTracked =
     visible.length > 0 && visible.every((r) => r.tracked);
   const someVisibleTracked = visible.some((r) => r.tracked);
@@ -325,8 +332,6 @@ export function JobsTable({
       }
     });
   }
-
-  const colSpan = mode === "tracking" ? 10 : 9;
 
   if (effectiveRows.length === 0) {
     if (mode === "tracking") {
@@ -582,6 +587,11 @@ export function JobsTable({
                   onSort={toggleSort}
                   className="hidden lg:table-cell"
                 />
+                {mode === "tracking" && (
+                  <th scope="col" className="px-3 py-3 font-mono font-medium">
+                    Resume
+                  </th>
+                )}
                 <th scope="col" className="py-3 pr-5">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -591,7 +601,7 @@ export function JobsTable({
               {visible.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={colSpan}
+                    colSpan={columnCount}
                     className="text-muted-foreground px-5 py-12 text-center text-sm"
                   >
                     No jobs match these filters.
@@ -870,6 +880,20 @@ export function JobsTable({
                           {job.foundLabel}
                         </td>
 
+                        {/* Tailored resume */}
+                        {mode === "tracking" && (
+                          <td className="px-3 py-3.5">
+                            <TailorResumeCell
+                              jobId={job.id}
+                              jobTitle={job.title}
+                              hasDescription={Boolean(
+                                job.description ?? job.snippet,
+                              )}
+                              status={job.tailored ?? null}
+                            />
+                          </td>
+                        )}
+
                         {/* Actions */}
                         <td className="py-3.5 pr-5 pl-2">
                           <div className="flex items-center justify-end gap-1">
@@ -917,7 +941,7 @@ export function JobsTable({
                           id={detailsId}
                           className="border-border/50 bg-muted/30 border-b"
                         >
-                          <td colSpan={colSpan} className="px-5 pt-0 pb-5">
+                          <td colSpan={columnCount} className="px-5 pt-0 pb-5">
                             {mode === "tracking" ? (
                               <div className="max-w-5xl space-y-4">
                                 <div className="border-aura-secondary/40 space-y-2 border-l-2 pl-3">

@@ -9,6 +9,10 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.string().url(),
     TAVILY_API_KEY: z.string().min(1),
+    /** Resume tailoring (Claude). Optional so builds work without it. */
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    /** LaTeX → PDF compiles (useoctree.com). Free plan: 30 compiles/day. */
+    OCTREE_API_KEY: z.string().min(1).optional(),
     BUCKET_ACCESS_KEY: z.string().min(1),
     BUCKET_SECRET_KEY: z.string().min(1),
     NODE_ENV: z
@@ -40,6 +44,8 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     TAVILY_API_KEY: process.env.TAVILY_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    OCTREE_API_KEY: process.env.OCTREE_API_KEY,
     BUCKET_ACCESS_KEY: process.env.BUCKET_ACCESS_KEY,
     BUCKET_SECRET_KEY: process.env.BUCKET_SECRET_KEY,
     NODE_ENV: process.env.NODE_ENV,
