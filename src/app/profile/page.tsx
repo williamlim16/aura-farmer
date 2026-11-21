@@ -3,12 +3,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import {
+  ArrowRight,
   Briefcase,
   CheckCircle2,
   FileText,
   GraduationCap,
   Home,
   KeyRound,
+  Target,
 } from "lucide-react";
 
 import { AuraBackdrop } from "~/components/aura-backdrop";
@@ -196,7 +198,7 @@ export default async function ProfilePage() {
         {/* Summary Status Cards */}
         <section
           aria-label="Candidate profile overview"
-          className="grid gap-4 sm:grid-cols-3"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
         >
           <Card size="sm">
             <CardHeader>
@@ -269,6 +271,41 @@ export default async function ProfilePage() {
               </p>
             </CardContent>
           </Card>
+
+          <Link
+            href="/jobs"
+            className="group focus-visible:ring-ring rounded-xl focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <Card
+              size="sm"
+              className="group-hover:border-aura-secondary/40 h-full transition-colors"
+            >
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardDescription className="font-mono text-xs uppercase">
+                    Curated Jobs
+                  </CardDescription>
+                  <Target
+                    aria-hidden="true"
+                    className="text-aura-secondary size-4"
+                  />
+                </div>
+                <CardTitle className="flex items-center gap-1.5 text-xl">
+                  Tailored feed
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="text-muted-foreground size-4 transition-transform group-hover:translate-x-0.5"
+                  />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground text-xs">
+                  Roles matched to your background, ready to apply from one
+                  place.
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
         </section>
 
         {/* Main Candidate Profile Editor & Account Sidebar */}
