@@ -1,0 +1,15 @@
+# Browser worker image (NOT the Next.js app). UNVERIFIED: not built yet (no Docker
+# on the development machine). Base image ships Chromium + system deps for
+# Playwright; keep its version in step with the "playwright" package.
+FROM mcr.microsoft.com/playwright:v1.65.1-noble
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+ENV NODE_ENV=production
+# Required at runtime (set in the host, never baked in):
+#   REPO_DRIVER=postgres, DATABASE_URL, STORAGE_DRIVER=s3, BUCKET_* ,
+#   optional LLM_* / JEV_* (paid calls need explicit opt-in flags)
+USER pwuser
+CMD ["pnpm", "worker"]
