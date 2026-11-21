@@ -40,7 +40,8 @@ export interface WorkerOptions {
   logger?: Pick<Console, "info" | "warn" | "error">;
 }
 
-export const screenshotKey = (userId: string, applicationId: string) => `${userId}/applications/${applicationId}/screenshot.png`;
+export { screenshotKey } from "./keys";
+import { screenshotKey } from "./keys";
 
 class NonRetryable extends Error {}
 

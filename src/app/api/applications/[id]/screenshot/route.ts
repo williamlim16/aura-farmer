@@ -1,4 +1,4 @@
-import { screenshotKey } from "~/server/jobs/worker";
+import { screenshotKey } from "~/server/jobs/keys";
 import { apiDeps, currentUserId, errorResponse, guarded } from "~/server/api/next";
 
 export const runtime = "nodejs";
