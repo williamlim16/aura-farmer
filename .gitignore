@@ -44,6 +44,23 @@ yarn-error.log*
 
 # idea files
 .idea
+
+# terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
 # local benchmark output
 /bench-results
 # local dev data (file storage, dev database)
