@@ -43,7 +43,7 @@ export async function addKeywordAction(
   }
 
   await addKeyword(user.id, parsed.data);
-  revalidatePath("/protected/jobs");
+  revalidatePath("/jobs");
   return { ok: true, message: `Added "${parsed.data}".` };
 }
 
@@ -53,7 +53,7 @@ export async function removeKeywordAction(formData: FormData) {
   if (!id.success) return;
 
   await removeKeyword(user.id, id.data);
-  revalidatePath("/protected/jobs");
+  revalidatePath("/jobs");
 }
 
 export async function refreshJobsAction(): Promise<ActionState> {
@@ -61,7 +61,7 @@ export async function refreshJobsAction(): Promise<ActionState> {
 
   try {
     const { saved, removed, errors } = await refreshJobsForUser(user.id);
-    revalidatePath("/protected/jobs");
+    revalidatePath("/jobs");
 
     if (saved === 0 && errors.length > 0) {
       return { ok: false, message: errors.join(" · ") };

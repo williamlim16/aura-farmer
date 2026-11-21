@@ -65,7 +65,7 @@ export function OAuthButtons({ disabled, onError }: OAuthButtonsProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/oauth?next=${encodeURIComponent(safeNextPath(next, "/protected"))}`,
+          redirectTo: `${window.location.origin}/auth/oauth?next=${encodeURIComponent(safeNextPath(next, "/profile"))}`,
         },
       });
       if (error) throw error;

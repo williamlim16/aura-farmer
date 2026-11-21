@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
-import { refreshJobsAction } from "~/app/protected/jobs/actions";
+import { refreshJobsAction } from "~/app/jobs/actions";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 

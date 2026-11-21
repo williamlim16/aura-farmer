@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Loader2, Plus } from "lucide-react";
 
-import { addKeywordAction } from "~/app/protected/jobs/actions";
+import { addKeywordAction } from "~/app/jobs/actions";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { cn } from "~/lib/utils";

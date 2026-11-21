@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, Briefcase, Target, X } from "lucide-react";
 
-import { removeKeywordAction } from "~/app/protected/jobs/actions";
+import { removeKeywordAction } from "~/app/jobs/actions";
 import { AuraBackdrop } from "~/components/aura-backdrop";
 import { BrandLogo } from "~/components/brand-logo";
 import { JobCard } from "~/components/jobs/job-card";
@@ -63,11 +63,11 @@ export default async function JobsPage() {
         <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div className="space-y-2">
             <Link
-              href="/protected"
+              href="/profile"
               className={buttonVariants({ variant: "ghost", size: "xs" })}
             >
               <ArrowLeft aria-hidden="true" />
-              Dashboard
+              Profile
             </Link>
             <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
               Tailored <span className="text-aura-gradient">feed</span>

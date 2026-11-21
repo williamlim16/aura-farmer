@@ -107,10 +107,10 @@ export default async function HomePage() {
             {user ? (
               <>
                 <Link
-                  href="/protected"
+                  href="/profile"
                   className={buttonVariants({ variant: "default", size: "sm" })}
                 >
-                  Open dashboard
+                  Open profile
                   <ArrowRight aria-hidden="true" className="size-3.5" />
                 </Link>
                 <LogoutButton
@@ -176,10 +176,10 @@ export default async function HomePage() {
               {user ? (
                 <>
                   <Link
-                    href="/protected"
+                    href="/profile"
                     className={buttonVariants({ variant: "default", size: "lg" })}
                   >
-                    Open dashboard
+                    Open profile
                     <ArrowRight aria-hidden="true" className="size-4" />
                   </Link>
                   <LogoutButton variant="outline" size="lg" />
@@ -333,10 +333,10 @@ export default async function HomePage() {
               <div className="flex flex-wrap items-center gap-3">
                 {user ? (
                   <Link
-                    href="/protected"
+                    href="/profile"
                     className={buttonVariants({ variant: "default", size: "lg" })}
                   >
-                    Open dashboard
+                    Open profile
                     <ArrowRight aria-hidden="true" className="size-4" />
                   </Link>
                 ) : (
