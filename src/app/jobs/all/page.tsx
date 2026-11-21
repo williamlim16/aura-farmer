@@ -1,58 +1,24 @@
 import type { Metadata } from "next";
 
-import { postedLabel } from "~/components/jobs/job-card";
-import { JobsTable, type JobRow } from "~/components/jobs/jobs-table";
+import { formatJobRows } from "~/components/jobs/format-job-rows";
+import { JobsTable } from "~/components/jobs/jobs-table";
 import { requireUser } from "~/server/auth";
-import { JOB_SOURCES, type JobSource } from "~/server/job-boards";
-import { getAllJobs, getKeywords } from "~/server/jobs";
+import { getAllJobs, getKeywords, getTrackedJobIds } from "~/server/jobs";
 
 export const metadata: Metadata = {
   title: "All Jobs",
   description: "Every role we've found for you, in one table.",
 };
 
-const dateFormat = new Intl.DateTimeFormat("en-AU", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
-
-/** "Today" / "Yesterday" / "4d ago" / "12 Nov 2026". */
-function foundLabel(date: Date): string {
-  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
-  if (days < 1) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 14) return `${days}d ago`;
-  return dateFormat.format(date);
-}
-
 export default async function AllJobsPage() {
   const user = await requireUser();
-  const [jobs, keywords] = await Promise.all([
+  const [jobs, keywords, trackedJobIds] = await Promise.all([
     getAllJobs(user.id),
     getKeywords(user.id),
+    getTrackedJobIds(user.id),
   ]);
-  const tracked = new Set(keywords.map((k) => k.keyword));
-
-  // Labels are computed here so server and client render identical text
-  // (no timezone / clock drift hydration mismatches).
-  const rows: JobRow[] = jobs.map((job) => ({
-    id: job.id,
-    title: job.title,
-    url: job.url,
-    source: job.source,
-    sourceLabel: JOB_SOURCES[job.source as JobSource]?.label ?? job.source,
-    keyword: job.keyword,
-    keywordTracked: tracked.has(job.keyword),
-    company: job.company,
-    location: job.location,
-    snippet: job.snippet,
-    postedAt: job.publishedAt?.getTime() ?? null,
-    postedLabel: postedLabel(job).replace(/^Posted /, ""),
-    foundAt: job.fetchedAt.getTime(),
-    foundLabel: foundLabel(job.fetchedAt),
-    foundTitle: dateFormat.format(job.fetchedAt),
-  }));
+  const trackedKeywords = new Set(keywords.map((k) => k.keyword));
+  const rows = formatJobRows(jobs, trackedKeywords, trackedJobIds);
 
   return (
     <>
@@ -62,11 +28,13 @@ export default async function AllJobsPage() {
         </h1>
         <p className="text-muted-foreground text-sm sm:text-base">
           Every role we&apos;ve found for you across Seek, LinkedIn and Indeed —
-          including past searches. Search, filter and sort to dig in.
+          including past searches. Use the checkboxes to curate roles into your{" "}
+          <span className="text-foreground font-medium">Tracking</span>{" "}
+          shortlist for CV and resume tailoring.
         </p>
       </section>
 
-      <JobsTable rows={rows} />
+      <JobsTable rows={rows} mode="all" />
     </>
   );
 }

@@ -78,6 +78,30 @@ export const jobs = createTable(
   ],
 ).enableRLS();
 
+/**
+ * Curated shortlist of jobs a user has selected to track for tailoring
+ * their CVs and resumes. One row per (user, job).
+ */
+export const trackedJobs = createTable(
+  "tracking",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    jobId: d
+      .integer()
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [
+    uniqueIndex("tracking_user_job_idx").on(t.userId, t.jobId),
+    index("tracking_user_created_idx").on(t.userId, t.createdAt),
+  ],
+).enableRLS();
+
 /** Core candidate details and personal summary tied 1:1 to a Supabase user ID. */
 export const userProfiles = createTable(
   "user_profile",
@@ -215,3 +239,5 @@ export type Education = typeof educations.$inferSelect;
 export type NewEducation = typeof educations.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
+export type TrackedJob = typeof trackedJobs.$inferSelect;
+export type NewTrackedJob = typeof trackedJobs.$inferInsert;
