@@ -3,7 +3,8 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
 import { jobKeywords, jobs } from "~/server/db/schema";
-import { searchJobs, SOURCE_ORDER, type JobSource } from "~/server/tavily";
+import { SOURCE_ORDER, type JobSource } from "~/server/job-boards";
+import { searchJobs } from "~/server/tavily";
 
 /** `excluded.<column>` — the incoming value in an ON CONFLICT DO UPDATE. */
 const excluded = (column: AnyColumn) =>
@@ -48,11 +49,10 @@ export async function removeKeyword(userId: string, keywordId: number) {
 /**
  * The user's feed, most recently posted first.
  *
- * Tavily gives us no posted date, so recency comes from each board's posting
- * id (higher = newer). Ids from different boards aren't comparable, so we sort
- * each board newest-first and interleave them: newest Seek, newest LinkedIn,
- * an Indeed search, 2nd-newest Seek, … Rows without an id (Indeed search
- * pages) keep Tavily's relevance order.
+ * Each board is sorted newest-first — by posted date, then posting id (higher
+ * = newer) — and the boards are interleaved: newest Seek, newest LinkedIn,
+ * an Indeed job, 2nd-newest Seek, … Indeed cards carry no date, so Indeed
+ * jobs keep the board's own relevance order.
  *
  * Job rows are never deleted, so the feed filters what it shows:
  * - only jobs whose keyword the user currently tracks, and
@@ -94,8 +94,8 @@ export async function getJobFeed(userId: string, limit = 100) {
   for (const list of bySource.values()) {
     list.sort(
       (a, b) =>
-        (b.postingId ?? -1) - (a.postingId ?? -1) ||
-        (b.score ?? 0) - (a.score ?? 0),
+        (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0) ||
+        (b.postingId ?? -1) - (a.postingId ?? -1),
     );
   }
 
@@ -114,8 +114,9 @@ export async function getJobFeed(userId: string, limit = 100) {
 }
 
 /**
- * Pipeline: read the user's keywords from the DB → search the job boards via
- * Tavily → upsert the results into the `job` table.
+ * Pipeline: read the user's keywords from the DB → fetch each board's
+ * recent-listings page via Tavily Extract (all keywords in parallel) →
+ * upsert the results into the `job` table.
  *
  * Nothing is deleted. Each posting is stored once per user (unique on
  * user + url): a posting found again is updated in place — fresh details,
@@ -132,8 +133,12 @@ export async function refreshJobsForUser(userId: string) {
   const errors: string[] = [];
   const runStartedAt = new Date();
 
-  for (const { keyword } of keywords) {
-    const { results, errors: searchErrors } = await searchJobs(keyword);
+  // Each extract takes ~10–15s, so search all keywords at once.
+  const searches = await Promise.all(
+    keywords.map(async ({ keyword }) => ({ keyword, ...(await searchJobs(keyword)) })),
+  );
+
+  for (const { keyword, results, errors: searchErrors } of searches) {
     errors.push(...searchErrors.map((e) => `"${keyword}" — ${e}`));
 
     if (results.length > 0) {
@@ -147,6 +152,8 @@ export async function refreshJobsForUser(userId: string) {
           target: [jobs.userId, jobs.url],
           set: {
             title: excluded(jobs.title),
+            company: excluded(jobs.company),
+            location: excluded(jobs.location),
             snippet: excluded(jobs.snippet),
             score: excluded(jobs.score),
             keyword: excluded(jobs.keyword),
