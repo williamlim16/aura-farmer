@@ -73,8 +73,8 @@ export default async function JobsPage() {
               Tailored <span className="text-aura-gradient">feed</span>
             </h1>
             <p className="text-sm text-muted-foreground sm:text-base">
-              Roles from Seek, Indeed and LinkedIn matched to your target job
-              titles.
+              Recent roles from Seek, LinkedIn and Indeed matched to your
+              target job titles, newest first.
             </p>
           </div>
           <RefreshJobsButton disabled={keywords.length === 0} />

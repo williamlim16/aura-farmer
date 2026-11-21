@@ -31,8 +31,11 @@ export function JobCard({ job }: { job: JobCardData }) {
           <Badge variant="outline" className="max-w-[60%] truncate">
             {job.keyword}
           </Badge>
-          <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-            {dateFormat.format(job.fetchedAt)}
+          <span
+            className="ml-auto font-mono text-[11px] text-muted-foreground"
+            title="When this job was last found by a search"
+          >
+            Seen {dateFormat.format(job.fetchedAt)}
           </span>
         </div>
         <CardTitle className="line-clamp-2 text-base leading-snug">

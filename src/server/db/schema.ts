@@ -58,6 +58,8 @@ export const jobs = createTable(
     source: d.varchar({ length: 32 }).notNull(),
     title: d.text().notNull(),
     url: d.text().notNull(),
+    /** Numeric id from the posting URL; higher = posted more recently (per source). */
+    postingId: d.bigint({ mode: "number" }),
     snippet: d.text(),
     /** Tavily relevance score, 0–1. */
     score: d.real(),

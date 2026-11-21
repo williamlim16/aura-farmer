@@ -60,13 +60,15 @@ export async function refreshJobsAction(): Promise<ActionState> {
   const user = await requireUser();
 
   try {
-    const { saved, errors } = await refreshJobsForUser(user.id);
+    const { saved, removed, errors } = await refreshJobsForUser(user.id);
     revalidatePath("/protected/jobs");
 
     if (saved === 0 && errors.length > 0) {
       return { ok: false, message: errors.join(" · ") };
     }
-    const base = `Found ${saved} job${saved === 1 ? "" : "s"}.`;
+    const base =
+      `Found ${saved} job${saved === 1 ? "" : "s"}` +
+      (removed > 0 ? `, removed ${removed} no longer listed.` : ".");
     return {
       ok: true,
       message: errors.length ? `${base} Some searches failed: ${errors.join(" · ")}` : base,
