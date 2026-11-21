@@ -33,9 +33,11 @@ const plusJakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
+// Variable font (no fixed `weight`): Google serves extension-less "/l/font?kit="
+// URLs for fixed JetBrains Mono weights, which next/font cannot load (build error
+// "Cannot read properties of null (reading '1')"). The variable axis covers 400/500.
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["400", "500"],
   variable: "--font-jetbrains-mono",
   display: "swap",
 });
