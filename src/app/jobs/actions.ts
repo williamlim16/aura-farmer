@@ -43,7 +43,7 @@ export async function addKeywordAction(
   }
 
   await addKeyword(user.id, parsed.data);
-  revalidatePath("/jobs");
+  revalidatePath("/jobs", "layout");
   return { ok: true, message: `Added "${parsed.data}".` };
 }
 
@@ -53,25 +53,27 @@ export async function removeKeywordAction(formData: FormData) {
   if (!id.success) return;
 
   await removeKeyword(user.id, id.data);
-  revalidatePath("/jobs");
+  revalidatePath("/jobs", "layout");
 }
 
 export async function refreshJobsAction(): Promise<ActionState> {
   const user = await requireUser();
 
   try {
-    const { saved, removed, errors } = await refreshJobsForUser(user.id);
-    revalidatePath("/jobs");
+    const { saved, added, errors } = await refreshJobsForUser(user.id);
+    revalidatePath("/jobs", "layout");
 
     if (saved === 0 && errors.length > 0) {
       return { ok: false, message: errors.join(" · ") };
     }
     const base =
       `Found ${saved} job${saved === 1 ? "" : "s"}` +
-      (removed > 0 ? `, removed ${removed} no longer listed.` : ".");
+      (saved > 0 ? ` (${added} new).` : ".");
     return {
       ok: true,
-      message: errors.length ? `${base} Some searches failed: ${errors.join(" · ")}` : base,
+      message: errors.length
+        ? `${base} Some searches failed: ${errors.join(" · ")}`
+        : base,
     };
   } catch (err) {
     console.error("refreshJobsAction failed", err);
