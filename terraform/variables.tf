@@ -21,7 +21,7 @@ variable "environment" {
 }
 
 variable "aws_region" {
-  description = "AWS region where Textract and the resume S3 bucket reside. Must be a region supporting Amazon Textract."
+  description = "AWS region for Amazon Textract. Must be a region supporting Amazon Textract."
   type        = string
   default     = "ap-southeast-2"
 
@@ -46,43 +46,35 @@ variable "aws_region" {
   }
 }
 
-variable "resume_bucket_name" {
-  description = "Optional custom S3 bucket name for uploaded resumes. If null, defaults to '<project_name>-<environment>-resumes-<account_id>'."
+variable "aws_access_key_id" {
+  description = "Optional AWS Access Key ID used by Terraform to provision resources. If null, Terraform falls back to AWS_ACCESS_KEY_ID env var or ~/.aws/credentials."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "aws_secret_access_key" {
+  description = "Optional AWS Secret Access Key used by Terraform to provision resources. If null, Terraform falls back to AWS_SECRET_ACCESS_KEY env var or ~/.aws/credentials."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "aws_session_token" {
+  description = "Optional AWS Session Token (only required when using temporary STS/SSO credentials)."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "aws_profile" {
+  description = "Optional AWS CLI profile name from ~/.aws/credentials or ~/.aws/config."
   type        = string
   default     = null
 }
 
-variable "force_destroy_bucket" {
-  description = "Allow Terraform to destroy the resume S3 bucket even when it contains objects (recommended only for dev/test)."
-  type        = bool
-  default     = false
-}
-
-variable "enable_bucket_versioning" {
-  description = "Enable S3 object versioning on the resume upload bucket."
-  type        = bool
-  default     = false
-}
-
-variable "resume_retention_days" {
-  description = "Number of days to retain uploaded resume files and temporary Textract outputs before automatic S3 lifecycle expiration. Set to 0 to disable expiration."
-  type        = number
-  default     = 7
-
-  validation {
-    condition     = var.resume_retention_days >= 0 && floor(var.resume_retention_days) == var.resume_retention_days
-    error_message = "resume_retention_days must be a non-negative integer."
-  }
-}
-
-variable "cors_allowed_origins" {
-  description = "Allowed CORS origins for direct browser-to-S3 presigned URL resume uploads."
-  type        = list(string)
-  default     = ["http://localhost:3000"]
-}
-
 variable "create_app_iam_user" {
-  description = "Create a dedicated IAM user with least-privilege permissions for the application to call Textract and access the resume S3 bucket."
+  description = "Create a dedicated IAM user with least-privilege permissions for the application to call Amazon Textract."
   type        = bool
   default     = true
 }
@@ -91,18 +83,6 @@ variable "create_app_access_key" {
   description = "Generate an IAM access key pair for the application IAM user (output as sensitive values for your .env configuration)."
   type        = bool
   default     = true
-}
-
-variable "enable_async_notifications" {
-  description = "Provision an SNS topic, SQS queue (+ DLQ), and Textract IAM service role for asynchronous multi-page PDF resume processing notifications."
-  type        = bool
-  default     = true
-}
-
-variable "sqs_message_retention_seconds" {
-  description = "Retention period (in seconds) for Textract completion messages in the SQS queue."
-  type        = number
-  default     = 86400 # 1 day
 }
 
 variable "tags" {

@@ -22,8 +22,8 @@ export default function Page() {
   return (
     <AuthShell
       eyebrow="Almost there"
-      headline="One quick check to activate auto-applying."
-      subcopy="Confirm your email so you can upload your resume, explore curated job matches, and launch browser-automated applications."
+      headline="One quick check to start tailoring and tracking."
+      subcopy="Confirm your email so you can upload your resume, auto-tailor your CVs, and keep track of your matched jobs."
     >
       <Card>
         <CardHeader className="space-y-3">

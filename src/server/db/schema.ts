@@ -2,7 +2,7 @@
 // https://orm.drizzle.team/docs/sql-schema-declaration
 
 import { relations } from "drizzle-orm";
-import { index, pgTableCreator } from "drizzle-orm/pg-core";
+import { index, pgTableCreator, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
  * This is an example of how to use the multi-project schema feature of Drizzle ORM. Use the same
@@ -25,6 +25,90 @@ export const posts = createTable(
   }),
   (t) => [index("name_idx").on(t.name)],
 );
+
+/**
+ * Job titles / search terms a user wants to be matched against.
+ * `userId` is the Supabase auth user id (the JWT `sub` claim).
+ *
+ * RLS is enabled with no policies, so these tables are not reachable through
+ * Supabase's public REST API — only through our server via DATABASE_URL.
+ */
+export const jobKeywords = createTable(
+  "job_keyword",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    keyword: d.varchar({ length: 120 }).notNull(),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [uniqueIndex("job_keyword_user_keyword_idx").on(t.userId, t.keyword)],
+).enableRLS();
+
+/** Job listings found on the job boards for a user's keywords. One row per (user, url). */
+export const jobs = createTable(
+  "job",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    /** The keyword that produced this result. */
+    keyword: d.varchar({ length: 120 }).notNull(),
+    /** "seek" | "indeed" | "linkedin" */
+    source: d.varchar({ length: 32 }).notNull(),
+    title: d.text().notNull(),
+    url: d.text().notNull(),
+    /** Numeric id from the posting URL; higher = posted more recently (per source). */
+    postingId: d.bigint({ mode: "number" }),
+    company: d.text(),
+    location: d.text(),
+    snippet: d.text(),
+    /** Full description scraped from the posting page (plain text, "• " bullets). */
+    description: d.text(),
+    /**
+     * How many times we've tried to fetch `description`. Capped so postings
+     * that have expired (or keep failing) aren't retried forever.
+     */
+    descriptionAttempts: d.smallint().default(0).notNull(),
+    /** Tavily relevance score, 0–1. */
+    score: d.real(),
+    publishedAt: d.timestamp({ withTimezone: true }),
+    fetchedAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [
+    uniqueIndex("job_user_url_idx").on(t.userId, t.url),
+    index("job_user_fetched_idx").on(t.userId, t.fetchedAt),
+  ],
+).enableRLS();
+
+/**
+ * Curated shortlist of jobs a user has selected to track for tailoring
+ * their CVs and resumes. One row per (user, job).
+ */
+export const trackedJobs = createTable(
+  "tracking",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.uuid().notNull(),
+    jobId: d
+      .integer()
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    status: d.varchar({ length: 32 }).default("lead").notNull(),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [
+    uniqueIndex("tracking_user_job_idx").on(t.userId, t.jobId),
+    index("tracking_user_created_idx").on(t.userId, t.createdAt),
+  ],
+).enableRLS();
 
 /** Core candidate details and personal summary tied 1:1 to a Supabase user ID. */
 export const userProfiles = createTable(
@@ -163,6 +247,8 @@ export type Education = typeof educations.$inferSelect;
 export type NewEducation = typeof educations.$inferInsert;
 export type Resume = typeof resumes.$inferSelect;
 export type NewResume = typeof resumes.$inferInsert;
+export type TrackedJob = typeof trackedJobs.$inferSelect;
+export type NewTrackedJob = typeof trackedJobs.$inferInsert;
 
 // Resume -> profile -> application workflow tables (feat/apply-engine).
 // Reuses the resumes table above; see apply-schema.ts.

@@ -59,7 +59,7 @@ export function BrandLogo({
         </span>
         {showTag && (
           <span className="hidden rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 font-mono text-[10px] font-medium tracking-wider text-muted-foreground uppercase sm:inline-block">
-            Auto-Apply
+            Tailor &amp; Track
           </span>
         )}
       </span>

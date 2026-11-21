@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import {
   Briefcase,
   Building2,
@@ -149,8 +149,9 @@ function formatDateRange(
   endDate: string | null,
   isCurrent: boolean,
 ): string {
-  const end = isCurrent ? "Present" : (endDate ?? "Present");
-  return `${startDate} — ${end}`;
+  if (isCurrent) return `${startDate} — Present`;
+  if (!endDate) return startDate;
+  return `${startDate} — ${endDate}`;
 }
 
 export function ProfileEditor({
@@ -202,6 +203,18 @@ export function ProfileEditor({
     null,
   );
   const [isSavingEducation, startEducationTransition] = useTransition();
+
+  useEffect(() => {
+    setProfileForm(emptyProfileState(initialProfile));
+  }, [initialProfile]);
+
+  useEffect(() => {
+    setExperienceItems(initialExperiences);
+  }, [initialExperiences]);
+
+  useEffect(() => {
+    setEducationItems(initialEducations);
+  }, [initialEducations]);
 
   const skillTags = parseSkills(profileForm.skills);
 
@@ -390,8 +403,8 @@ export function ProfileEditor({
                 Personal Summary &amp; Details
               </CardTitle>
               <CardDescription>
-                Your core candidate identity used to curate roles and pre-fill
-                application portals.
+                Your core candidate identity used to auto-tailor your resumes
+                and CVs and match relevant jobs.
               </CardDescription>
             </div>
           </div>
@@ -633,8 +646,8 @@ export function ProfileEditor({
                 </Badge>
               </div>
               <CardDescription>
-                Add your past and current roles so portal forms and role
-                matching reflect your real track record.
+                Add your past and current roles so tailored resumes, CVs, and
+                job matches reflect your real track record.
               </CardDescription>
             </div>
           </div>
@@ -1275,8 +1288,8 @@ export function ProfileEditor({
                   No education added yet
                 </p>
                 <p className="text-muted-foreground max-w-md text-xs leading-relaxed">
-                  Add your degrees, bootcamps, or certifications so job portals
-                  requiring academic history are filled accurately.
+                  Add your degrees, bootcamps, or certifications so tailored
+                  resumes and CVs include your complete academic history.
                 </p>
               </div>
             </div>

@@ -31,6 +31,8 @@ export function stackEnv(opts: { databaseUrl: string; authUrl: string; storageDi
     // Storage, so placeholders keep env validation happy without real keys.
     BUCKET_ACCESS_KEY: process.env.BUCKET_ACCESS_KEY ?? "local-stack-placeholder",
     BUCKET_SECRET_KEY: process.env.BUCKET_SECRET_KEY ?? "local-stack-placeholder",
+    // Required by the team's job-discovery backend (src/env.js); the local stack never calls Tavily.
+    TAVILY_API_KEY: process.env.TAVILY_API_KEY ?? "local-stack-placeholder",
   };
 }
 

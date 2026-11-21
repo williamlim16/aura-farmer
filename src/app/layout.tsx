@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s · Aura Farmer",
   },
   description:
-    "Upload your resume, get a curated list of matched roles, and apply automatically across job portals with browser automation.",
+    "Upload your resume, auto-tailor your resumes and CVs for matched roles, and keep track of every job opportunity in one place.",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 

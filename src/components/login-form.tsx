@@ -60,7 +60,7 @@ export function LoginForm({
         <CardHeader className="space-y-1.5">
           <CardTitle className="text-2xl">Welcome back</CardTitle>
           <CardDescription>
-            Sign in to manage your resume, curated jobs, and auto-apply queue.
+            Sign in to manage your tailored resumes, CVs, and tracked jobs.
           </CardDescription>
         </CardHeader>
 

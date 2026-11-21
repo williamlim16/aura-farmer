@@ -21,69 +21,23 @@ data "aws_iam_policy_document" "app_textract" {
   }
 
   statement {
-    sid    = "ResumeBucketList"
+    sid    = "BedrockResumeStructuring"
     effect = "Allow"
 
     actions = [
-      "s3:ListBucket",
-      "s3:GetBucketLocation",
+      "bedrock:InvokeModel",
     ]
 
-    resources = [aws_s3_bucket.resumes.arn]
-  }
-
-  statement {
-    sid    = "ResumeBucketObjectAccess"
-    effect = "Allow"
-
-    actions = [
-      "s3:PutObject",
-      "s3:GetObject",
-      "s3:DeleteObject",
+    resources = [
+      "arn:aws:bedrock:*::foundation-model/*",
+      "arn:aws:bedrock:*:*:inference-profile/*",
     ]
-
-    resources = ["${aws_s3_bucket.resumes.arn}/*"]
-  }
-
-  dynamic "statement" {
-    for_each = var.enable_async_notifications ? [1] : []
-
-    content {
-      sid       = "PassTextractServiceRole"
-      effect    = "Allow"
-      actions   = ["iam:PassRole"]
-      resources = [aws_iam_role.textract_service_role[0].arn]
-
-      condition {
-        test     = "StringEquals"
-        variable = "iam:PassedToService"
-        values   = ["textract.amazonaws.com"]
-      }
-    }
-  }
-
-  dynamic "statement" {
-    for_each = var.enable_async_notifications ? [1] : []
-
-    content {
-      sid    = "ConsumeTextractJobQueue"
-      effect = "Allow"
-
-      actions = [
-        "sqs:ReceiveMessage",
-        "sqs:DeleteMessage",
-        "sqs:GetQueueAttributes",
-        "sqs:ChangeMessageVisibility",
-      ]
-
-      resources = [aws_sqs_queue.textract_jobs[0].arn]
-    }
   }
 }
 
 resource "aws_iam_policy" "app_textract" {
   name        = "${local.name_prefix}-app-textract-policy"
-  description = "Least-privilege policy for ${var.project_name} to upload resumes to S3 and extract resume information with AWS Textract."
+  description = "Least-privilege policy for ${var.project_name} to extract resume information with AWS Textract."
   policy      = data.aws_iam_policy_document.app_textract.json
 }
 
